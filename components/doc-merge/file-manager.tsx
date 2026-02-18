@@ -80,6 +80,7 @@ export function FileManager() {
 
   // Thumbnail state - stores generated thumbnails by file id
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const generatedThumbnailsRef = useRef<Set<string>>(new Set());
 
   // Generate thumbnails for files
   const generateThumbnail = useCallback(
@@ -129,13 +130,16 @@ export function FileManager() {
         if (file.type === "pdf" && file.isPasswordProtected && !file.password)
           continue;
 
-        // Skip if thumbnail already exists (unless it's a PDF that just got unlocked)
-        const needsRegeneration =
-          file.type === "pdf" &&
-          file.isPasswordProtected &&
-          file.password &&
-          !thumbnails[file.id];
-        if (thumbnails[file.id] && !needsRegeneration) continue;
+        // Create a key that includes password state for PDFs
+        const thumbnailKey = file.isPasswordProtected
+          ? `${file.id}-${file.password ? "unlocked" : "locked"}`
+          : file.id;
+
+        // Skip if already generating or generated with current state
+        if (generatedThumbnailsRef.current.has(thumbnailKey)) continue;
+
+        // Mark as being generated
+        generatedThumbnailsRef.current.add(thumbnailKey);
 
         const thumbnail = await generateThumbnail(file);
         if (thumbnail) {
@@ -145,8 +149,10 @@ export function FileManager() {
     };
 
     generateAllThumbnails();
+  }, [files, generateThumbnail]);
 
-    // Cleanup object URLs on unmount
+  // Cleanup blob URLs on unmount only
+  useEffect(() => {
     return () => {
       Object.values(thumbnails).forEach((url) => {
         if (url.startsWith("blob:")) {
@@ -154,7 +160,8 @@ export function FileManager() {
         }
       });
     };
-  }, [files, thumbnails, generateThumbnail]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filter and sort files
   const filteredFiles = files
@@ -517,6 +524,11 @@ export function FileManager() {
                   onSelect={() => toggleFileSelection(file.id)}
                   onDelete={() => removeFile(file.id)}
                   onPasswordClick={() => setSelectedFileId(file.id)}
+                  onRotate={
+                    file.type === "image"
+                      ? () => handleRotate(file.id)
+                      : undefined
+                  }
                   onDragStart={(e) => handleDragStart(e, file.id)}
                   onDragOver={(e) => handleDragOver(e, file.id)}
                   onDragLeave={handleDragLeave}
@@ -609,6 +621,7 @@ function ListFileItem({
   onSelect,
   onDelete,
   onPasswordClick,
+  onRotate,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -617,6 +630,7 @@ function ListFileItem({
 }: FileItemProps) {
   const isLocked = file.isPasswordProtected && !file.password;
   const isUnlocked = file.isPasswordProtected && file.password;
+  const rotation = file.rotation || 0;
 
   return (
     <div
@@ -660,8 +674,8 @@ function ListFileItem({
         {index + 1}
       </div>
 
-      {/* File icon */}
-      <div className="shrink-0">
+      {/* File icon with rotation indicator */}
+      <div className="shrink-0 relative">
         {file.type === "pdf" ? (
           <div
             className={`rounded p-1.5 sm:p-2 ${isLocked ? "bg-amber-100" : "bg-red-100"}`}
@@ -672,7 +686,16 @@ function ListFileItem({
           </div>
         ) : (
           <div className="rounded bg-blue-100 p-1.5 sm:p-2">
-            <Image className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
+            <Image
+              className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 transition-transform duration-300"
+              style={{ transform: `rotate(${rotation}deg)` }}
+            />
+          </div>
+        )}
+        {/* Rotation badge */}
+        {file.type === "image" && rotation > 0 && (
+          <div className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[8px] font-bold text-white">
+            {rotation}°
           </div>
         )}
       </div>
@@ -691,6 +714,13 @@ function ListFileItem({
             <>
               <span>•</span>
               <span className="shrink-0">{file.pages} pages</span>
+            </>
+          )}
+          {/* Rotation indicator in info */}
+          {file.type === "image" && rotation > 0 && (
+            <>
+              <span>•</span>
+              <span className="text-blue-600 font-medium">↻ {rotation}°</span>
             </>
           )}
           {isLocked && (
@@ -712,6 +742,21 @@ function ListFileItem({
 
       {/* Actions - Compact */}
       <div className="flex items-center gap-0.5 shrink-0">
+        {/* Rotate button - only for images */}
+        {onRotate && file.type === "image" && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRotate}
+            className="h-8 w-8 text-blue-500 hover:bg-blue-50 hover:text-blue-600 active:scale-90 transition-all"
+            title={`Rotate 90° (currently ${rotation}°)`}
+          >
+            <RotateCw
+              className="h-4 w-4 transition-transform duration-300"
+              style={{ transform: `rotate(${rotation}deg)` }}
+            />
+          </Button>
+        )}
         {file.isPasswordProtected && (
           <Button
             variant={isLocked ? "default" : "ghost"}
@@ -814,10 +859,10 @@ function GridFileItem({
             e.stopPropagation();
             onRotate();
           }}
-          className="absolute left-2 bottom-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-blue-600"
+          className="absolute left-2 bottom-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-white shadow-md transition-all hover:bg-blue-600 hover:scale-110"
           title="Rotate 90°"
         >
-          <RotateCw className="h-3 w-3" />
+          <RotateCw className="h-3.5 w-3.5" />
         </button>
       )}
 
@@ -832,16 +877,24 @@ function GridFileItem({
       {/* File preview with thumbnail */}
       <div className="flex flex-col items-center pt-4">
         {thumbnail ? (
-          <div className="relative h-20 w-full overflow-hidden rounded-lg bg-gray-100">
+          <div className="relative h-20 w-full overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center">
             <img
               src={thumbnail}
               alt={file.name}
-              className="h-full w-full object-cover transition-transform duration-200"
+              className={`max-h-full max-w-full object-contain transition-transform duration-300 ${
+                rotation === 90 || rotation === 270 ? "scale-75" : ""
+              }`}
               style={{ transform: `rotate(${rotation}deg)` }}
             />
             {isLocked && (
               <div className="absolute inset-0 flex items-center justify-center bg-amber-500/80">
                 <Lock className="h-6 w-6 text-white" />
+              </div>
+            )}
+            {/* Rotation indicator badge */}
+            {file.type === "image" && rotation > 0 && (
+              <div className="absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[8px] font-bold text-white shadow">
+                {rotation}°
               </div>
             )}
           </div>
