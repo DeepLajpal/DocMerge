@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
   Upload,
   FileText,
@@ -60,13 +60,9 @@ export function FileManager() {
   const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
 
-  // Camera state
-  const [showCamera, setShowCamera] = useState(false);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // File input refs
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Password modal state
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -98,118 +94,10 @@ export function FileManager() {
       return sortOrder === "asc" ? comparison : -comparison;
     });
 
-  // Camera functions
-  const startCamera = async () => {
-    try {
-      // Check if mediaDevices API is available (requires HTTPS/secure context)
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert(
-          "Camera access is not available. This feature requires HTTPS. " +
-            "Please access this app via HTTPS or localhost.",
-        );
-        return;
-      }
-
-      // Open dialog first, then get camera stream
-      setShowCamera(true);
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      });
-      setCameraStream(stream);
-    } catch (error) {
-      console.error("Failed to access camera:", error);
-      setShowCamera(false);
-      alert("Unable to access camera. Please check permissions.");
-    }
+  // Native camera handler - opens device camera directly on mobile
+  const handleCameraClick = () => {
+    cameraInputRef.current?.click();
   };
-
-  const stopCamera = useCallback(() => {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach((track) => track.stop());
-      setCameraStream(null);
-    }
-    setShowCamera(false);
-    setCapturedImage(null);
-  }, [cameraStream]);
-
-  const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(video, 0, 0);
-        const imageDataUrl = canvas.toDataURL("image/jpeg", 0.9);
-        setCapturedImage(imageDataUrl);
-      }
-    }
-  };
-
-  const retakePhoto = () => {
-    setCapturedImage(null);
-    // The useEffect will handle reconnecting the video stream
-  };
-
-  const usePhoto = () => {
-    if (capturedImage) {
-      try {
-        // Convert data URL to Blob directly (more reliable than fetch)
-        const [header, base64Data] = capturedImage.split(",");
-        const mimeMatch = header.match(/:(.*?);/);
-        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-        const byteString = atob(base64Data);
-        const arrayBuffer = new ArrayBuffer(byteString.length);
-        const uint8Array = new Uint8Array(arrayBuffer);
-        for (let i = 0; i < byteString.length; i++) {
-          uint8Array[i] = byteString.charCodeAt(i);
-        }
-        const blob = new Blob([uint8Array], { type: mimeType });
-        const file = new File([blob], `capture-${Date.now()}.jpg`, {
-          type: "image/jpeg",
-        });
-        addFiles([file]);
-        stopCamera();
-      } catch (error) {
-        console.error("Failed to process captured image:", error);
-        alert("Failed to process the captured image. Please try again.");
-      }
-    }
-  };
-
-  // Set video source when camera stream is ready and video element exists
-  useEffect(() => {
-    const video = videoRef.current;
-    if (showCamera && video && cameraStream && !capturedImage) {
-      // Use a small delay to ensure the video element is fully rendered
-      const timeoutId = setTimeout(() => {
-        if (video.srcObject !== cameraStream) {
-          video.srcObject = cameraStream;
-        }
-        // Only play if video is paused
-        if (video.paused) {
-          const playPromise = video.play();
-          if (playPromise !== undefined) {
-            playPromise.catch((err) => {
-              // Ignore AbortError - this happens when play is interrupted
-              if (err.name !== "AbortError") {
-                console.error("Video play failed:", err);
-              }
-            });
-          }
-        }
-      }, 50);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [showCamera, cameraStream, capturedImage]);
 
   // File upload handlers
   const handleDrag = (e: React.DragEvent) => {
@@ -235,6 +123,8 @@ export function FileManager() {
         addFiles(selectedFiles as File[]);
       }
     }
+    // Reset input so the same file can be selected again
+    e.target.value = "";
   };
 
   // Drag and drop reordering
@@ -334,6 +224,16 @@ export function FileManager() {
           className="hidden"
         />
 
+        {/* Native camera capture input - opens device camera directly on mobile */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+
         <div className="flex flex-col items-center justify-center gap-4 px-6 py-8">
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-blue-100 p-3">
@@ -362,7 +262,7 @@ export function FileManager() {
               Select Files
             </Button>
             <Button
-              onClick={startCamera}
+              onClick={handleCameraClick}
               variant="outline"
               className="border-green-500 text-green-600 hover:bg-green-50"
             >
@@ -567,73 +467,6 @@ export function FileManager() {
           )}
         </div>
       )}
-
-      {/* Camera Modal */}
-      <Dialog open={showCamera} onOpenChange={(open) => !open && stopCamera()}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Capture Document</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {!capturedImage ? (
-              <>
-                <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="h-full w-full object-cover"
-                  />
-                  {!cameraStream && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center text-white">
-                        <div className="mb-2 h-6 w-6 mx-auto animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        <p className="text-sm">Accessing camera...</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="flex justify-center gap-3">
-                  <Button variant="outline" onClick={stopCamera}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={capturePhoto}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    <Camera className="mr-2 h-4 w-4" />
-                    Capture
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
-                  <img
-                    src={capturedImage}
-                    alt="Captured"
-                    className="h-full w-full object-contain"
-                  />
-                </div>
-                <div className="flex justify-center gap-3">
-                  <Button variant="outline" onClick={retakePhoto}>
-                    Retake
-                  </Button>
-                  <Button
-                    onClick={usePhoto}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Use Photo
-                  </Button>
-                </div>
-              </>
-            )}
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Password Modal */}
       {selectedFileId && (
