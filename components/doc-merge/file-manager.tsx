@@ -289,7 +289,10 @@ export function FileManager() {
     if (currentIndex === -1) return;
 
     // Clamp position to valid range (1-based input, convert to 0-based)
-    const targetIndex = Math.max(0, Math.min(files.length - 1, newPosition - 1));
+    const targetIndex = Math.max(
+      0,
+      Math.min(files.length - 1, newPosition - 1),
+    );
     if (targetIndex === currentIndex) return;
 
     const newFiles = [...files];
