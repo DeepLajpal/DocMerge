@@ -1,0 +1,4 @@
+Contact: security@docmerge.app
+Expires: 2027-02-18T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://docmerge.app/.well-known/security.txt

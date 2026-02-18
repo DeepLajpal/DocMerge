@@ -1,0 +1,120 @@
+"use client";
+
+import { create } from "zustand";
+import {
+  UploadedFile,
+  OutputSettings,
+  CompressionSettings,
+  MergeResult,
+  MergeState,
+} from "./types";
+
+interface MergeStore extends MergeState {
+  addFiles: (newFiles: File[]) => void;
+  removeFile: (id: string) => void;
+  reorderFiles: (files: UploadedFile[]) => void;
+  updatePassword: (id: string, password: string) => void;
+  updateFileProtection: (id: string, isPasswordProtected: boolean) => void;
+  updateOutputSettings: (settings: Partial<OutputSettings>) => void;
+  updateCompressionSettings: (settings: Partial<CompressionSettings>) => void;
+  setLoading: (loading: boolean) => void;
+  setMergeResult: (result: MergeResult) => void;
+  setError: (error: string | undefined) => void;
+  resetApp: () => void;
+}
+
+const defaultOutputSettings: OutputSettings = {
+  pageSize: "A4",
+  orientation: "portrait",
+  filename: "merged-document",
+};
+
+const defaultCompressionSettings: CompressionSettings = {
+  targetSize: 5,
+  targetUnit: "MB",
+  quality: "balanced",
+};
+
+export const useMergeStore = create<MergeStore>((set) => ({
+  files: [],
+  outputSettings: defaultOutputSettings,
+  compressionSettings: defaultCompressionSettings,
+  isLoading: false,
+  error: undefined,
+
+  addFiles: (newFiles: File[]) =>
+    set((state) => {
+      const maxOrder =
+        state.files.length > 0
+          ? Math.max(...state.files.map((f) => f.order))
+          : -1;
+      const addedFiles = newFiles.map(
+        (file, index): UploadedFile => ({
+          id: `${Date.now()}-${index}`,
+          name: file.name,
+          size: file.size,
+          type: file.name.endsWith(".pdf") ? "pdf" : "image",
+          file,
+          order: maxOrder + 1 + index,
+        }),
+      );
+      return { files: [...state.files, ...addedFiles] };
+    }),
+
+  removeFile: (id: string) =>
+    set((state) => ({
+      files: state.files.filter((f) => f.id !== id),
+    })),
+
+  reorderFiles: (files: UploadedFile[]) =>
+    set(() => ({
+      files,
+    })),
+
+  updatePassword: (id: string, password: string) =>
+    set((state) => ({
+      files: state.files.map((f) => (f.id === id ? { ...f, password } : f)),
+    })),
+
+  updateFileProtection: (id: string, isPasswordProtected: boolean) =>
+    set((state) => ({
+      files: state.files.map((f) =>
+        f.id === id ? { ...f, isPasswordProtected } : f,
+      ),
+    })),
+
+  updateOutputSettings: (settings: Partial<OutputSettings>) =>
+    set((state) => ({
+      outputSettings: { ...state.outputSettings, ...settings },
+    })),
+
+  updateCompressionSettings: (settings: Partial<CompressionSettings>) =>
+    set((state) => ({
+      compressionSettings: { ...state.compressionSettings, ...settings },
+    })),
+
+  setLoading: (loading: boolean) =>
+    set(() => ({
+      isLoading: loading,
+    })),
+
+  setMergeResult: (result: MergeResult) =>
+    set(() => ({
+      mergeResult: result,
+    })),
+
+  setError: (error: string | undefined) =>
+    set(() => ({
+      error,
+    })),
+
+  resetApp: () =>
+    set(() => ({
+      files: [],
+      outputSettings: defaultOutputSettings,
+      compressionSettings: defaultCompressionSettings,
+      mergeResult: undefined,
+      isLoading: false,
+      error: undefined,
+    })),
+}));

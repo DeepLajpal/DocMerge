@@ -1,0 +1,930 @@
+"use client";
+
+import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  Upload,
+  FileText,
+  Image,
+  Trash2,
+  Lock,
+  LockOpen,
+  GripVertical,
+  Search,
+  Grid3X3,
+  List,
+  Camera,
+  X,
+  Filter,
+  SortAsc,
+  SortDesc,
+  CheckCircle2,
+  Eye,
+} from "lucide-react";
+import { useMergeStore } from "@/lib/store";
+import { isValidFileType, formatFileSize } from "@/lib/file-utils";
+import { UploadedFile } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EnhancedPasswordModal } from "./enhanced-password-modal";
+
+type ViewMode = "list" | "grid";
+type SortBy = "name" | "size" | "type" | "order";
+type SortOrder = "asc" | "desc";
+
+export function FileManager() {
+  const files = useMergeStore((state) => state.files);
+  const addFiles = useMergeStore((state) => state.addFiles);
+  const removeFile = useMergeStore((state) => state.removeFile);
+  const reorderFiles = useMergeStore((state) => state.reorderFiles);
+
+  // View state
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("order");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+
+  // Drag state
+  const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
+  const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
+
+  // Camera state
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Password modal state
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+
+  // Selection state for batch operations
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+  // Filter and sort files
+  const filteredFiles = files
+    .filter((file) =>
+      file.name.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+    .sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "size":
+          comparison = a.size - b.size;
+          break;
+        case "type":
+          comparison = a.type.localeCompare(b.type);
+          break;
+        case "order":
+        default:
+          comparison = a.order - b.order;
+      }
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+
+  // Camera functions
+  const startCamera = async () => {
+    try {
+      // Check if mediaDevices API is available (requires HTTPS/secure context)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert(
+          "Camera access is not available. This feature requires HTTPS. " +
+            "Please access this app via HTTPS or localhost.",
+        );
+        return;
+      }
+
+      // Open dialog first, then get camera stream
+      setShowCamera(true);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+      setCameraStream(stream);
+    } catch (error) {
+      console.error("Failed to access camera:", error);
+      setShowCamera(false);
+      alert("Unable to access camera. Please check permissions.");
+    }
+  };
+
+  const stopCamera = useCallback(() => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      setCameraStream(null);
+    }
+    setShowCamera(false);
+    setCapturedImage(null);
+  }, [cameraStream]);
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(video, 0, 0);
+        const imageDataUrl = canvas.toDataURL("image/jpeg", 0.9);
+        setCapturedImage(imageDataUrl);
+      }
+    }
+  };
+
+  const retakePhoto = () => {
+    setCapturedImage(null);
+    // The useEffect will handle reconnecting the video stream
+  };
+
+  const usePhoto = () => {
+    if (capturedImage) {
+      try {
+        // Convert data URL to Blob directly (more reliable than fetch)
+        const [header, base64Data] = capturedImage.split(",");
+        const mimeMatch = header.match(/:(.*?);/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+        const byteString = atob(base64Data);
+        const arrayBuffer = new ArrayBuffer(byteString.length);
+        const uint8Array = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < byteString.length; i++) {
+          uint8Array[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([uint8Array], { type: mimeType });
+        const file = new File([blob], `capture-${Date.now()}.jpg`, {
+          type: "image/jpeg",
+        });
+        addFiles([file]);
+        stopCamera();
+      } catch (error) {
+        console.error("Failed to process captured image:", error);
+        alert("Failed to process the captured image. Please try again.");
+      }
+    }
+  };
+
+  // Set video source when camera stream is ready and video element exists
+  useEffect(() => {
+    const video = videoRef.current;
+    if (showCamera && video && cameraStream && !capturedImage) {
+      // Use a small delay to ensure the video element is fully rendered
+      const timeoutId = setTimeout(() => {
+        if (video.srcObject !== cameraStream) {
+          video.srcObject = cameraStream;
+        }
+        // Only play if video is paused
+        if (video.paused) {
+          const playPromise = video.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((err) => {
+              // Ignore AbortError - this happens when play is interrupted
+              if (err.name !== "AbortError") {
+                console.error("Video play failed:", err);
+              }
+            });
+          }
+        }
+      }, 50);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [showCamera, cameraStream, capturedImage]);
+
+  // File upload handlers
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(
+      isValidFileType,
+    );
+    if (droppedFiles.length > 0) {
+      addFiles(droppedFiles as File[]);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selectedFiles = Array.from(e.target.files).filter(isValidFileType);
+      if (selectedFiles.length > 0) {
+        addFiles(selectedFiles as File[]);
+      }
+    }
+  };
+
+  // Drag and drop reordering
+  const handleDragStart = (e: React.DragEvent, fileId: string) => {
+    e.dataTransfer.effectAllowed = "move";
+    setDraggedFileId(fileId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, fileId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverFileId(fileId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverFileId(null);
+  };
+
+  const handleDropReorder = (e: React.DragEvent, targetFileId: string) => {
+    e.preventDefault();
+    if (!draggedFileId || draggedFileId === targetFileId) {
+      setDraggedFileId(null);
+      setDragOverFileId(null);
+      return;
+    }
+
+    const draggedIndex = files.findIndex((f) => f.id === draggedFileId);
+    const targetIndex = files.findIndex((f) => f.id === targetFileId);
+
+    const newFiles = [...files];
+    const [draggedFile] = newFiles.splice(draggedIndex, 1);
+    newFiles.splice(targetIndex, 0, draggedFile);
+
+    const reorderedFiles = newFiles.map((f, idx) => ({ ...f, order: idx }));
+    reorderFiles(reorderedFiles);
+    setDraggedFileId(null);
+    setDragOverFileId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedFileId(null);
+    setDragOverFileId(null);
+  };
+
+  // Selection handlers
+  const toggleFileSelection = (fileId: string) => {
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedFiles(new Set(filteredFiles.map((f) => f.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedFiles(new Set());
+  };
+
+  const deleteSelected = () => {
+    selectedFiles.forEach((id) => removeFile(id));
+    setSelectedFiles(new Set());
+  };
+
+  // Toggle sort order
+  const toggleSort = (newSortBy: SortBy) => {
+    if (sortBy === newSortBy) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(newSortBy);
+      setSortOrder("asc");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Upload Area */}
+      <div
+        className="relative w-full rounded-xl border-2 border-dashed border-gray-300 bg-white transition-colors hover:border-blue-400"
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.jpg,.jpeg,.png"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+
+        <div className="flex flex-col items-center justify-center gap-4 px-6 py-8">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-blue-100 p-3">
+              <Upload className="h-6 w-6 text-blue-600" />
+            </div>
+            <div className="rounded-full bg-green-100 p-3">
+              <Camera className="h-6 w-6 text-green-600" />
+            </div>
+          </div>
+
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Upload your documents
+            </h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Drag & drop or use buttons below
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Select Files
+            </Button>
+            <Button
+              onClick={startCamera}
+              variant="outline"
+              className="border-green-500 text-green-600 hover:bg-green-50"
+            >
+              <Camera className="mr-2 h-4 w-4" />
+              Use Camera
+            </Button>
+          </div>
+
+          <p className="text-xs text-gray-400">Supported: PDF, JPG, PNG</p>
+        </div>
+      </div>
+
+      {/* File Manager Controls */}
+      {files.length > 0 && (
+        <div className="space-y-3">
+          {/* Search and View Controls */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {/* Search */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Search files..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* View Toggle and Sort */}
+            <div className="flex items-center gap-2">
+              <Select
+                value={sortBy}
+                onValueChange={(value: SortBy) => toggleSort(value)}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="order">Order</SelectItem>
+                  <SelectItem value="name">Name</SelectItem>
+                  <SelectItem value="size">Size</SelectItem>
+                  <SelectItem value="type">Type</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() =>
+                  setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+                }
+                title={sortOrder === "asc" ? "Ascending" : "Descending"}
+              >
+                {sortOrder === "asc" ? (
+                  <SortAsc className="h-4 w-4" />
+                ) : (
+                  <SortDesc className="h-4 w-4" />
+                )}
+              </Button>
+
+              <div className="flex rounded-lg border border-gray-200 p-1">
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={`rounded p-1.5 transition-colors ${
+                    viewMode === "list"
+                      ? "bg-blue-100 text-blue-600"
+                      : "text-gray-400 hover:text-gray-600"
+                  }`}
+                  title="List view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode("grid")}
+                  className={`rounded p-1.5 transition-colors ${
+                    viewMode === "grid"
+                      ? "bg-blue-100 text-blue-600"
+                      : "text-gray-400 hover:text-gray-600"
+                  }`}
+                  title="Grid view"
+                >
+                  <Grid3X3 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Batch Actions */}
+          {selectedFiles.size > 0 && (
+            <div className="flex items-center gap-3 rounded-lg bg-blue-50 px-4 py-2">
+              <span className="text-sm font-medium text-blue-700">
+                {selectedFiles.size} selected
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearSelection}
+                className="text-blue-600 hover:bg-blue-100"
+              >
+                Clear
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={deleteSelected}
+                className="text-red-600 hover:bg-red-100"
+              >
+                <Trash2 className="mr-1 h-4 w-4" />
+                Delete
+              </Button>
+            </div>
+          )}
+
+          {/* File Count */}
+          <div className="flex items-center justify-between text-sm text-gray-500">
+            <span>
+              {filteredFiles.length} of {files.length} files
+              {searchQuery && " (filtered)"}
+            </span>
+            {files.length > 1 && (
+              <button
+                onClick={
+                  selectedFiles.size === filteredFiles.length
+                    ? clearSelection
+                    : selectAll
+                }
+                className="text-blue-600 hover:text-blue-700"
+              >
+                {selectedFiles.size === filteredFiles.length
+                  ? "Deselect all"
+                  : "Select all"}
+              </button>
+            )}
+          </div>
+
+          {/* File List/Grid */}
+          {viewMode === "list" ? (
+            <div className="space-y-2">
+              {filteredFiles.map((file, index) => (
+                <ListFileItem
+                  key={file.id}
+                  file={file}
+                  index={index}
+                  isSelected={selectedFiles.has(file.id)}
+                  isDragging={draggedFileId === file.id}
+                  isDragOver={dragOverFileId === file.id}
+                  onSelect={() => toggleFileSelection(file.id)}
+                  onDelete={() => removeFile(file.id)}
+                  onPasswordClick={() => setSelectedFileId(file.id)}
+                  onDragStart={(e) => handleDragStart(e, file.id)}
+                  onDragOver={(e) => handleDragOver(e, file.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDropReorder(e, file.id)}
+                  onDragEnd={handleDragEnd}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {filteredFiles.map((file, index) => (
+                <GridFileItem
+                  key={file.id}
+                  file={file}
+                  index={index}
+                  isSelected={selectedFiles.has(file.id)}
+                  isDragging={draggedFileId === file.id}
+                  isDragOver={dragOverFileId === file.id}
+                  onSelect={() => toggleFileSelection(file.id)}
+                  onDelete={() => removeFile(file.id)}
+                  onPasswordClick={() => setSelectedFileId(file.id)}
+                  onDragStart={(e) => handleDragStart(e, file.id)}
+                  onDragOver={(e) => handleDragOver(e, file.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDropReorder(e, file.id)}
+                  onDragEnd={handleDragEnd}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* No results */}
+          {filteredFiles.length === 0 && searchQuery && (
+            <div className="py-8 text-center text-gray-500">
+              <Search className="mx-auto h-8 w-8 text-gray-300" />
+              <p className="mt-2">No files match "{searchQuery}"</p>
+              <button
+                onClick={() => setSearchQuery("")}
+                className="mt-2 text-sm text-blue-600 hover:text-blue-700"
+              >
+                Clear search
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Camera Modal */}
+      <Dialog open={showCamera} onOpenChange={(open) => !open && stopCamera()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Capture Document</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {!capturedImage ? (
+              <>
+                <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="h-full w-full object-cover"
+                  />
+                  {!cameraStream && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center text-white">
+                        <div className="mb-2 h-6 w-6 mx-auto animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <p className="text-sm">Accessing camera...</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-center gap-3">
+                  <Button variant="outline" onClick={stopCamera}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={capturePhoto}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Capture
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
+                  <img
+                    src={capturedImage}
+                    alt="Captured"
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <div className="flex justify-center gap-3">
+                  <Button variant="outline" onClick={retakePhoto}>
+                    Retake
+                  </Button>
+                  <Button
+                    onClick={usePhoto}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Use Photo
+                  </Button>
+                </div>
+              </>
+            )}
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Modal */}
+      {selectedFileId && (
+        <EnhancedPasswordModal
+          file={files.find((f) => f.id === selectedFileId)!}
+          onClose={() => setSelectedFileId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// List View File Item
+interface FileItemProps {
+  file: UploadedFile;
+  index: number;
+  isSelected: boolean;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onPasswordClick: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+}
+
+function ListFileItem({
+  file,
+  index,
+  isSelected,
+  isDragging,
+  isDragOver,
+  onSelect,
+  onDelete,
+  onPasswordClick,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+}: FileItemProps) {
+  const isLocked = file.isPasswordProtected && !file.password;
+  const isUnlocked = file.isPasswordProtected && file.password;
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={`flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-3 transition-all ${
+        isDragging
+          ? "border-blue-400 bg-blue-50 opacity-50"
+          : isDragOver
+            ? "border-blue-400 bg-blue-50"
+            : isSelected
+              ? "border-blue-500 bg-blue-50"
+              : isLocked
+                ? "border-amber-400 bg-amber-50 hover:border-amber-500"
+                : "border-gray-200 bg-white hover:border-gray-300"
+      }`}
+    >
+      {/* Selection checkbox - hidden on mobile */}
+      <button
+        onClick={onSelect}
+        className={`hidden sm:flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
+          isSelected
+            ? "border-blue-500 bg-blue-500 text-white"
+            : "border-gray-300 hover:border-blue-400"
+        }`}
+      >
+        {isSelected && <CheckCircle2 className="h-3 w-3" />}
+      </button>
+
+      {/* Drag handle */}
+      <div className="cursor-grab text-gray-400 hover:text-gray-600 shrink-0">
+        <GripVertical className="h-4 w-4 sm:h-5 sm:w-5" />
+      </div>
+
+      {/* Order number */}
+      <div className="flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded bg-gray-100 text-xs font-medium text-gray-600">
+        {index + 1}
+      </div>
+
+      {/* File icon */}
+      <div className="shrink-0">
+        {file.type === "pdf" ? (
+          <div
+            className={`rounded p-1.5 sm:p-2 ${isLocked ? "bg-amber-100" : "bg-red-100"}`}
+          >
+            <FileText
+              className={`h-4 w-4 sm:h-5 sm:w-5 ${isLocked ? "text-amber-600" : "text-red-600"}`}
+            />
+          </div>
+        ) : (
+          <div className="rounded bg-blue-100 p-1.5 sm:p-2">
+            <Image className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
+          </div>
+        )}
+      </div>
+
+      {/* File info - Takes remaining space */}
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <h4
+          className="truncate text-sm font-medium text-gray-900"
+          title={file.name}
+        >
+          {file.name}
+        </h4>
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+          <span className="shrink-0">{formatFileSize(file.size)}</span>
+          {file.pages && (
+            <>
+              <span>•</span>
+              <span className="shrink-0">{file.pages} pages</span>
+            </>
+          )}
+          {isLocked && (
+            <>
+              <span>•</span>
+              <span className="text-amber-600 font-medium">
+                🔒 Tap to unlock
+              </span>
+            </>
+          )}
+          {isUnlocked && (
+            <>
+              <span>•</span>
+              <span className="text-green-600 font-medium">✓ Unlocked</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Actions - Compact */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        {file.isPasswordProtected && (
+          <Button
+            variant={isLocked ? "default" : "ghost"}
+            size="icon"
+            onClick={onPasswordClick}
+            className={`h-8 w-8 ${
+              isLocked
+                ? "bg-amber-500 hover:bg-amber-600 text-white animate-pulse"
+                : "text-green-600 hover:bg-green-50"
+            }`}
+            title={
+              file.password
+                ? "Password entered - Click to change"
+                : "Enter password to unlock"
+            }
+          >
+            {file.password ? (
+              <LockOpen className="h-4 w-4" />
+            ) : (
+              <Lock className="h-4 w-4" />
+            )}
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onDelete}
+          className="h-8 w-8 text-gray-400 hover:bg-red-50 hover:text-red-600"
+          title="Remove file"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Grid View File Item
+function GridFileItem({
+  file,
+  index,
+  isSelected,
+  isDragging,
+  isDragOver,
+  onSelect,
+  onDelete,
+  onPasswordClick,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+}: FileItemProps) {
+  const isLocked = file.isPasswordProtected && !file.password;
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={`group relative rounded-lg border p-3 transition-all ${
+        isDragging
+          ? "border-blue-400 bg-blue-50 opacity-50"
+          : isDragOver
+            ? "border-blue-400 bg-blue-50"
+            : isSelected
+              ? "border-blue-500 bg-blue-50"
+              : isLocked
+                ? "border-amber-400 bg-amber-50 hover:border-amber-500"
+                : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+      }`}
+    >
+      {/* Selection checkbox */}
+      <button
+        onClick={onSelect}
+        className={`absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border transition-colors ${
+          isSelected
+            ? "border-blue-500 bg-blue-500 text-white"
+            : "border-gray-300 bg-white opacity-0 group-hover:opacity-100 hover:border-blue-400"
+        }`}
+      >
+        {isSelected && <CheckCircle2 className="h-3 w-3" />}
+      </button>
+
+      {/* Order badge */}
+      <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-gray-800/70 text-[10px] font-medium text-white">
+        {index + 1}
+      </div>
+
+      {/* Delete button */}
+      <button
+        onClick={onDelete}
+        className="absolute right-2 bottom-2 z-10 flex h-6 w-6 items-center justify-center rounded bg-red-500 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-600"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
+
+      {/* File preview */}
+      <div className="flex flex-col items-center pt-4">
+        {file.type === "pdf" ? (
+          <div
+            className={`flex h-16 w-16 items-center justify-center rounded-lg ${isLocked ? "bg-amber-100" : "bg-red-100"}`}
+          >
+            <FileText
+              className={`h-8 w-8 ${isLocked ? "text-amber-600" : "text-red-600"}`}
+            />
+          </div>
+        ) : (
+          <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-blue-100">
+            <Image className="h-8 w-8 text-blue-600" />
+          </div>
+        )}
+
+        {/* File name */}
+        <p className="mt-2 w-full truncate text-center text-xs font-medium text-gray-900">
+          {file.name}
+        </p>
+
+        {/* File size */}
+        <p className="mt-0.5 text-[10px] text-gray-500">
+          {formatFileSize(file.size)}
+        </p>
+
+        {/* Password indicator */}
+        {file.isPasswordProtected && (
+          <button
+            onClick={onPasswordClick}
+            className={`mt-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+              file.password
+                ? "bg-green-100 text-green-700"
+                : "bg-amber-500 text-white animate-pulse"
+            }`}
+            title={
+              file.password
+                ? "Password entered - Click to change"
+                : "Tap to unlock"
+            }
+          >
+            {file.password ? (
+              <LockOpen className="h-2.5 w-2.5" />
+            ) : (
+              <Lock className="h-2.5 w-2.5" />
+            )}
+            {file.password ? "Unlocked" : "Tap to unlock"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
