@@ -2,26 +2,27 @@ export interface UploadedFile {
   id: string;
   name: string;
   size: number;
-  type: 'pdf' | 'image';
+  type: "pdf" | "image";
   pages?: number;
   isPasswordProtected?: boolean;
   password?: string;
   file: File;
   order: number;
+  thumbnail?: string;
 }
 
 export interface OutputSettings {
-  pageSize: 'A4' | 'Letter' | 'Legal' | 'Custom';
+  pageSize: "A4" | "Letter" | "Legal" | "Custom";
   customWidth?: number;
   customHeight?: number;
-  orientation: 'portrait' | 'landscape';
+  orientation: "portrait" | "landscape";
   filename: string;
 }
 
 export interface CompressionSettings {
   targetSize: number;
-  targetUnit: 'KB' | 'MB';
-  quality: 'high' | 'balanced' | 'small';
+  targetUnit: "KB" | "MB";
+  quality: "high" | "balanced" | "small";
 }
 
 export interface MergeResult {

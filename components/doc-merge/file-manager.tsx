@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Upload,
   FileText,
@@ -39,6 +39,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EnhancedPasswordModal } from "./enhanced-password-modal";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Set up PDF.js worker
+if (typeof window !== "undefined") {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+}
 
 type ViewMode = "list" | "grid";
 type SortBy = "name" | "size" | "type" | "order";
@@ -69,6 +75,84 @@ export function FileManager() {
 
   // Selection state for batch operations
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+  // Thumbnail state - stores generated thumbnails by file id
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+
+  // Generate thumbnails for files
+  const generateThumbnail = useCallback(
+    async (file: UploadedFile): Promise<string | null> => {
+      try {
+        if (file.type === "image") {
+          // For images, create an object URL directly
+          return URL.createObjectURL(file.file);
+        } else if (file.type === "pdf") {
+          // For PDFs, render the first page
+          const arrayBuffer = await file.file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({
+            data: arrayBuffer,
+            password: file.password || "",
+          }).promise;
+
+          const page = await pdf.getPage(1);
+          const viewport = page.getViewport({ scale: 0.3 }); // Small scale for thumbnail
+
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return null;
+
+          await page.render({
+            canvasContext: ctx,
+            viewport: viewport,
+          }).promise;
+
+          return canvas.toDataURL("image/jpeg", 0.7);
+        }
+      } catch (error) {
+        console.error("Failed to generate thumbnail:", error);
+      }
+      return null;
+    },
+    [],
+  );
+
+  // Generate thumbnails when files change
+  useEffect(() => {
+    const generateAllThumbnails = async () => {
+      for (const file of files) {
+        // Skip password-protected PDFs without password
+        if (file.type === "pdf" && file.isPasswordProtected && !file.password)
+          continue;
+
+        // Skip if thumbnail already exists (unless it's a PDF that just got unlocked)
+        const needsRegeneration =
+          file.type === "pdf" &&
+          file.isPasswordProtected &&
+          file.password &&
+          !thumbnails[file.id];
+        if (thumbnails[file.id] && !needsRegeneration) continue;
+
+        const thumbnail = await generateThumbnail(file);
+        if (thumbnail) {
+          setThumbnails((prev) => ({ ...prev, [file.id]: thumbnail }));
+        }
+      }
+    };
+
+    generateAllThumbnails();
+
+    // Cleanup object URLs on unmount
+    return () => {
+      Object.values(thumbnails).forEach((url) => {
+        if (url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
+  }, [files, thumbnails, generateThumbnail]);
 
   // Filter and sort files
   const filteredFiles = files
@@ -439,6 +523,7 @@ export function FileManager() {
                   isSelected={selectedFiles.has(file.id)}
                   isDragging={draggedFileId === file.id}
                   isDragOver={dragOverFileId === file.id}
+                  thumbnail={thumbnails[file.id]}
                   onSelect={() => toggleFileSelection(file.id)}
                   onDelete={() => removeFile(file.id)}
                   onPasswordClick={() => setSelectedFileId(file.id)}
@@ -486,6 +571,7 @@ interface FileItemProps {
   isSelected: boolean;
   isDragging: boolean;
   isDragOver: boolean;
+  thumbnail?: string;
   onSelect: () => void;
   onDelete: () => void;
   onPasswordClick: () => void;
@@ -652,6 +738,7 @@ function GridFileItem({
   isSelected,
   isDragging,
   isDragOver,
+  thumbnail,
   onSelect,
   onDelete,
   onPasswordClick,
@@ -708,9 +795,22 @@ function GridFileItem({
         <Trash2 className="h-3 w-3" />
       </button>
 
-      {/* File preview */}
+      {/* File preview with thumbnail */}
       <div className="flex flex-col items-center pt-4">
-        {file.type === "pdf" ? (
+        {thumbnail ? (
+          <div className="relative h-20 w-full overflow-hidden rounded-lg bg-gray-100">
+            <img
+              src={thumbnail}
+              alt={file.name}
+              className="h-full w-full object-cover"
+            />
+            {isLocked && (
+              <div className="absolute inset-0 flex items-center justify-center bg-amber-500/80">
+                <Lock className="h-6 w-6 text-white" />
+              </div>
+            )}
+          </div>
+        ) : file.type === "pdf" ? (
           <div
             className={`flex h-16 w-16 items-center justify-center rounded-lg ${isLocked ? "bg-amber-100" : "bg-red-100"}`}
           >
