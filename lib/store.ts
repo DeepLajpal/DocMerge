@@ -15,6 +15,7 @@ interface MergeStore extends MergeState {
   reorderFiles: (files: UploadedFile[]) => void;
   updatePassword: (id: string, password: string) => void;
   updateFileProtection: (id: string, isPasswordProtected: boolean) => void;
+  updateFileRotation: (id: string, rotation: number) => void;
   updateOutputSettings: (settings: Partial<OutputSettings>) => void;
   updateCompressionSettings: (settings: Partial<CompressionSettings>) => void;
   setLoading: (loading: boolean) => void;
@@ -81,6 +82,11 @@ export const useMergeStore = create<MergeStore>((set) => ({
       files: state.files.map((f) =>
         f.id === id ? { ...f, isPasswordProtected } : f,
       ),
+    })),
+
+  updateFileRotation: (id: string, rotation: number) =>
+    set((state) => ({
+      files: state.files.map((f) => (f.id === id ? { ...f, rotation } : f)),
     })),
 
   updateOutputSettings: (settings: Partial<OutputSettings>) =>

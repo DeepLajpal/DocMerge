@@ -67,6 +67,7 @@ export async function extractImageAsPage(
   file: File,
   settings: OutputSettings,
   compression?: CompressionSettings,
+  rotation: number = 0,
 ): Promise<{
   width: number;
   height: number;
@@ -90,14 +91,39 @@ export async function extractImageAsPage(
           height = Math.round(height * resampleRatio);
         }
 
-        const image = e.target?.result as string;
-        resolve({
-          width,
-          height,
-          image,
-          originalWidth: img.width,
-          originalHeight: img.height,
-        });
+        // Apply rotation - swap dimensions for 90/270 degree rotations
+        const isRotated90or270 = rotation === 90 || rotation === 270;
+        const finalWidth = isRotated90or270 ? height : width;
+        const finalHeight = isRotated90or270 ? width : height;
+
+        // Create canvas to apply rotation
+        const canvas = document.createElement("canvas");
+        canvas.width = finalWidth;
+        canvas.height = finalHeight;
+        const ctx = canvas.getContext("2d");
+
+        if (ctx && rotation !== 0) {
+          ctx.translate(finalWidth / 2, finalHeight / 2);
+          ctx.rotate((rotation * Math.PI) / 180);
+          ctx.drawImage(img, -width / 2, -height / 2, width, height);
+          const rotatedImage = canvas.toDataURL("image/png");
+          resolve({
+            width: finalWidth,
+            height: finalHeight,
+            image: rotatedImage,
+            originalWidth: img.width,
+            originalHeight: img.height,
+          });
+        } else {
+          const image = e.target?.result as string;
+          resolve({
+            width,
+            height,
+            image,
+            originalWidth: img.width,
+            originalHeight: img.height,
+          });
+        }
       };
       img.onerror = () => reject(new Error("Failed to load image"));
       img.src = e.target?.result as string;
@@ -228,6 +254,7 @@ export async function mergePDFsAndImages(
         file.file,
         settings,
         compression,
+        file.rotation || 0,
       );
       const page = mergedPdf.addPage([pageDims.width, pageDims.height]);
 

@@ -9,6 +9,7 @@ export interface UploadedFile {
   file: File;
   order: number;
   thumbnail?: string;
+  rotation?: number;
 }
 
 export interface OutputSettings {

@@ -19,6 +19,7 @@ import {
   SortDesc,
   CheckCircle2,
   Eye,
+  RotateCw,
 } from "lucide-react";
 import { useMergeStore } from "@/lib/store";
 import { isValidFileType, formatFileSize } from "@/lib/file-utils";
@@ -55,6 +56,7 @@ export function FileManager() {
   const addFiles = useMergeStore((state) => state.addFiles);
   const removeFile = useMergeStore((state) => state.removeFile);
   const reorderFiles = useMergeStore((state) => state.reorderFiles);
+  const updateFileRotation = useMergeStore((state) => state.updateFileRotation);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -251,6 +253,16 @@ export function FileManager() {
   const handleDragEnd = () => {
     setDraggedFileId(null);
     setDragOverFileId(null);
+  };
+
+  // Rotate image handler - rotates 90 degrees clockwise
+  const handleRotate = (fileId: string) => {
+    const file = files.find((f) => f.id === fileId);
+    if (file && file.type === "image") {
+      const currentRotation = file.rotation || 0;
+      const newRotation = (currentRotation + 90) % 360;
+      updateFileRotation(fileId, newRotation);
+    }
   };
 
   // Selection handlers
@@ -527,6 +539,11 @@ export function FileManager() {
                   onSelect={() => toggleFileSelection(file.id)}
                   onDelete={() => removeFile(file.id)}
                   onPasswordClick={() => setSelectedFileId(file.id)}
+                  onRotate={
+                    file.type === "image"
+                      ? () => handleRotate(file.id)
+                      : undefined
+                  }
                   onDragStart={(e) => handleDragStart(e, file.id)}
                   onDragOver={(e) => handleDragOver(e, file.id)}
                   onDragLeave={handleDragLeave}
@@ -575,6 +592,7 @@ interface FileItemProps {
   onSelect: () => void;
   onDelete: () => void;
   onPasswordClick: () => void;
+  onRotate?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
@@ -742,6 +760,7 @@ function GridFileItem({
   onSelect,
   onDelete,
   onPasswordClick,
+  onRotate,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -749,6 +768,7 @@ function GridFileItem({
   onDragEnd,
 }: FileItemProps) {
   const isLocked = file.isPasswordProtected && !file.password;
+  const rotation = file.rotation || 0;
 
   return (
     <div
@@ -787,6 +807,20 @@ function GridFileItem({
         {index + 1}
       </div>
 
+      {/* Rotate button - only for images */}
+      {onRotate && file.type === "image" && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRotate();
+          }}
+          className="absolute left-2 bottom-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-blue-600"
+          title="Rotate 90°"
+        >
+          <RotateCw className="h-3 w-3" />
+        </button>
+      )}
+
       {/* Delete button */}
       <button
         onClick={onDelete}
@@ -802,7 +836,8 @@ function GridFileItem({
             <img
               src={thumbnail}
               alt={file.name}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition-transform duration-200"
+              style={{ transform: `rotate(${rotation}deg)` }}
             />
             {isLocked && (
               <div className="absolute inset-0 flex items-center justify-center bg-amber-500/80">
