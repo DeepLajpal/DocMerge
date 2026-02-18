@@ -90,12 +90,19 @@ export function FileManager() {
           // For images, create an object URL directly
           return URL.createObjectURL(file.file);
         } else if (file.type === "pdf") {
+          // Skip password-protected PDFs without valid password
+          if (file.isPasswordProtected && !file.password) {
+            return null;
+          }
+
           // For PDFs, render the first page
           const arrayBuffer = await file.file.arrayBuffer();
-          const pdf = await pdfjsLib.getDocument({
+          const loadingTask = pdfjsLib.getDocument({
             data: arrayBuffer,
-            password: file.password || "",
-          }).promise;
+            password: file.password || undefined,
+          });
+
+          const pdf = await loadingTask.promise;
 
           const page = await pdf.getPage(1);
           const viewport = page.getViewport({ scale: 0.3 }); // Small scale for thumbnail
@@ -114,7 +121,11 @@ export function FileManager() {
 
           return canvas.toDataURL("image/jpeg", 0.7);
         }
-      } catch (error) {
+      } catch (error: any) {
+        // Silently handle password exceptions - these are expected for protected PDFs
+        if (error?.name === "PasswordException") {
+          return null;
+        }
         console.error("Failed to generate thumbnail:", error);
       }
       return null;

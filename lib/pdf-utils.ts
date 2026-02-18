@@ -20,7 +20,6 @@ export async function detectPasswordProtection(file: File): Promise<boolean> {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({
       data: arrayBuffer,
-      password: "",
     }).promise;
     return false;
   } catch (error: any) {
@@ -55,7 +54,7 @@ export async function getPDFPageCount(
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({
       data: arrayBuffer,
-      password: password || "",
+      password: password || undefined,
     }).promise;
     return pdf.numPages;
   } catch (error) {
@@ -172,7 +171,7 @@ export async function mergePDFsAndImages(
         try {
           const pdfDoc = await pdfjsLib.getDocument({
             data: arrayBuffer,
-            password: file.password || "",
+            password: file.password || undefined,
           }).promise;
 
           const dpiScale = getDpiScale(compression.quality);
