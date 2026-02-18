@@ -283,6 +283,23 @@ export function FileManager() {
     }
   };
 
+  // Order change handler - move file to specific position
+  const handleOrderChange = (fileId: string, newPosition: number) => {
+    const currentIndex = files.findIndex((f) => f.id === fileId);
+    if (currentIndex === -1) return;
+
+    // Clamp position to valid range (1-based input, convert to 0-based)
+    const targetIndex = Math.max(0, Math.min(files.length - 1, newPosition - 1));
+    if (targetIndex === currentIndex) return;
+
+    const newFiles = [...files];
+    const [movedFile] = newFiles.splice(currentIndex, 1);
+    newFiles.splice(targetIndex, 0, movedFile);
+
+    const reorderedFiles = newFiles.map((f, idx) => ({ ...f, order: idx }));
+    reorderFiles(reorderedFiles);
+  };
+
   // Selection handlers
   const toggleFileSelection = (fileId: string) => {
     setSelectedFiles((prev) => {
@@ -529,12 +546,14 @@ export function FileManager() {
                   key={file.id}
                   file={file}
                   index={index}
+                  totalFiles={filteredFiles.length}
                   isSelected={selectedFiles.has(file.id)}
                   isDragging={draggedFileId === file.id}
                   isDragOver={dragOverFileId === file.id}
                   onSelect={() => toggleFileSelection(file.id)}
                   onDelete={() => removeFile(file.id)}
                   onPasswordClick={() => setSelectedFileId(file.id)}
+                  onOrderChange={(newPos) => handleOrderChange(file.id, newPos)}
                   onRotate={
                     file.type === "image"
                       ? () => handleRotate(file.id)
@@ -555,6 +574,7 @@ export function FileManager() {
                   key={file.id}
                   file={file}
                   index={index}
+                  totalFiles={filteredFiles.length}
                   isSelected={selectedFiles.has(file.id)}
                   isDragging={draggedFileId === file.id}
                   isDragOver={dragOverFileId === file.id}
@@ -562,6 +582,7 @@ export function FileManager() {
                   onSelect={() => toggleFileSelection(file.id)}
                   onDelete={() => removeFile(file.id)}
                   onPasswordClick={() => setSelectedFileId(file.id)}
+                  onOrderChange={(newPos) => handleOrderChange(file.id, newPos)}
                   onRotate={
                     file.type === "image"
                       ? () => handleRotate(file.id)
@@ -608,6 +629,7 @@ export function FileManager() {
 interface FileItemProps {
   file: UploadedFile;
   index: number;
+  totalFiles: number;
   isSelected: boolean;
   isDragging: boolean;
   isDragOver: boolean;
@@ -616,6 +638,7 @@ interface FileItemProps {
   onDelete: () => void;
   onPasswordClick: () => void;
   onRotate?: () => void;
+  onOrderChange: (newPosition: number) => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
@@ -626,6 +649,7 @@ interface FileItemProps {
 function ListFileItem({
   file,
   index,
+  totalFiles,
   isSelected,
   isDragging,
   isDragOver,
@@ -633,15 +657,48 @@ function ListFileItem({
   onDelete,
   onPasswordClick,
   onRotate,
+  onOrderChange,
   onDragStart,
   onDragOver,
   onDragLeave,
   onDrop,
   onDragEnd,
 }: FileItemProps) {
+  const [isEditingOrder, setIsEditingOrder] = useState(false);
+  const [orderValue, setOrderValue] = useState(String(index + 1));
+  const orderInputRef = useRef<HTMLInputElement>(null);
   const isLocked = file.isPasswordProtected && !file.password;
   const isUnlocked = file.isPasswordProtected && file.password;
   const rotation = file.rotation || 0;
+
+  const handleOrderSubmit = () => {
+    const newPos = parseInt(orderValue, 10);
+    if (!isNaN(newPos) && newPos >= 1 && newPos <= totalFiles) {
+      onOrderChange(newPos);
+    }
+    setOrderValue(String(index + 1));
+    setIsEditingOrder(false);
+  };
+
+  const handleOrderKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleOrderSubmit();
+    } else if (e.key === "Escape") {
+      setOrderValue(String(index + 1));
+      setIsEditingOrder(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isEditingOrder && orderInputRef.current) {
+      orderInputRef.current.focus();
+      orderInputRef.current.select();
+    }
+  }, [isEditingOrder]);
+
+  useEffect(() => {
+    setOrderValue(String(index + 1));
+  }, [index]);
 
   return (
     <div
@@ -680,10 +737,28 @@ function ListFileItem({
         <GripVertical className="h-4 w-4 sm:h-5 sm:w-5" />
       </div>
 
-      {/* Order number */}
-      <div className="flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded bg-gray-100 text-xs font-medium text-gray-600">
-        {index + 1}
-      </div>
+      {/* Order number - editable */}
+      {isEditingOrder ? (
+        <input
+          ref={orderInputRef}
+          type="number"
+          min={1}
+          max={totalFiles}
+          value={orderValue}
+          onChange={(e) => setOrderValue(e.target.value)}
+          onBlur={handleOrderSubmit}
+          onKeyDown={handleOrderKeyDown}
+          className="h-6 w-8 sm:h-7 sm:w-9 shrink-0 rounded border border-blue-400 bg-white text-center text-xs font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      ) : (
+        <button
+          onClick={() => setIsEditingOrder(true)}
+          className="flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded bg-gray-100 text-xs font-medium text-gray-600 hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer"
+          title="Click to change order"
+        >
+          {index + 1}
+        </button>
+      )}
 
       {/* File icon with rotation indicator */}
       <div className="shrink-0 relative">
@@ -809,6 +884,7 @@ function ListFileItem({
 function GridFileItem({
   file,
   index,
+  totalFiles,
   isSelected,
   isDragging,
   isDragOver,
@@ -817,14 +893,47 @@ function GridFileItem({
   onDelete,
   onPasswordClick,
   onRotate,
+  onOrderChange,
   onDragStart,
   onDragOver,
   onDragLeave,
   onDrop,
   onDragEnd,
 }: FileItemProps) {
+  const [isEditingOrder, setIsEditingOrder] = useState(false);
+  const [orderValue, setOrderValue] = useState(String(index + 1));
+  const orderInputRef = useRef<HTMLInputElement>(null);
   const isLocked = file.isPasswordProtected && !file.password;
   const rotation = file.rotation || 0;
+
+  const handleOrderSubmit = () => {
+    const newPos = parseInt(orderValue, 10);
+    if (!isNaN(newPos) && newPos >= 1 && newPos <= totalFiles) {
+      onOrderChange(newPos);
+    }
+    setOrderValue(String(index + 1));
+    setIsEditingOrder(false);
+  };
+
+  const handleOrderKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleOrderSubmit();
+    } else if (e.key === "Escape") {
+      setOrderValue(String(index + 1));
+      setIsEditingOrder(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isEditingOrder && orderInputRef.current) {
+      orderInputRef.current.focus();
+      orderInputRef.current.select();
+    }
+  }, [isEditingOrder]);
+
+  useEffect(() => {
+    setOrderValue(String(index + 1));
+  }, [index]);
 
   return (
     <div
@@ -858,10 +967,32 @@ function GridFileItem({
         {isSelected && <CheckCircle2 className="h-3 w-3" />}
       </button>
 
-      {/* Order badge */}
-      <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-gray-800/70 text-[10px] font-medium text-white">
-        {index + 1}
-      </div>
+      {/* Order badge - editable */}
+      {isEditingOrder ? (
+        <input
+          ref={orderInputRef}
+          type="number"
+          min={1}
+          max={totalFiles}
+          value={orderValue}
+          onChange={(e) => setOrderValue(e.target.value)}
+          onBlur={handleOrderSubmit}
+          onKeyDown={handleOrderKeyDown}
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-1 top-1 z-20 h-6 w-8 rounded border border-blue-400 bg-white text-center text-[10px] font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      ) : (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsEditingOrder(true);
+          }}
+          className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-gray-800/70 text-[10px] font-medium text-white hover:bg-blue-600 transition-colors cursor-pointer"
+          title="Click to change order"
+        >
+          {index + 1}
+        </button>
+      )}
 
       {/* Rotate button - only for images */}
       {onRotate && file.type === "image" && (
