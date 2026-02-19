@@ -25,6 +25,18 @@ interface FileInput {
     width: number;
     height: number;
   };
+  pageCropData?: {
+    [pageNumber: number]: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+  };
+  deletedPages?: number[];
+  pageRotations?: {
+    [pageNumber: number]: number;
+  };
 }
 
 interface MergeRequest {
@@ -170,11 +182,30 @@ export async function POST(request: NextRequest) {
             ignoreEncryption: !!file.password,
           });
 
-          const copiedPages = await mergedPdf.copyPages(
-            sourcePdf,
-            sourcePdf.getPageIndices(),
-          );
-          copiedPages.forEach((page) => mergedPdf.addPage(page));
+          // Get page indices, filtering out deleted pages
+          let pageIndices = sourcePdf.getPageIndices();
+          if (file.deletedPages && file.deletedPages.length > 0) {
+            pageIndices = pageIndices.filter(
+              (idx) => !file.deletedPages!.includes(idx + 1), // deletedPages is 1-indexed
+            );
+          }
+
+          const copiedPages = await mergedPdf.copyPages(sourcePdf, pageIndices);
+
+          // Apply page rotations if specified
+          copiedPages.forEach((page, i) => {
+            const originalPageNum = pageIndices[i] + 1; // Convert to 1-indexed
+            const rotation = file.pageRotations?.[originalPageNum];
+            if (rotation && rotation !== 0) {
+              // pdf-lib rotation is cumulative, so set the absolute rotation
+              const currentRotation = page.getRotation().angle;
+              page.setRotation({
+                type: "degrees",
+                angle: currentRotation + rotation,
+              } as any);
+            }
+            mergedPdf.addPage(page);
+          });
         } catch (error: any) {
           console.error(`Failed to process PDF ${file.name}:`, error);
           return NextResponse.json(
@@ -196,7 +227,11 @@ export async function POST(request: NextRequest) {
           let height = metadata.height;
 
           // Apply crop if specified (before rotation/resize)
-          if (file.cropData && file.cropData.width > 0 && file.cropData.height > 0) {
+          if (
+            file.cropData &&
+            file.cropData.width > 0 &&
+            file.cropData.height > 0
+          ) {
             const extractLeft = Math.round(file.cropData.x * width);
             const extractTop = Math.round(file.cropData.y * height);
             const extractWidth = Math.round(file.cropData.width * width);

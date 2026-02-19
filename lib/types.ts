@@ -24,6 +24,8 @@ export interface UploadedFile {
   rotation?: number;
   cropData?: CropData;
   pageCropData?: PageCropData; // Per-page crop data for PDFs
+  deletedPages?: number[]; // Pages to exclude from merge (1-indexed)
+  pageRotations?: { [pageNumber: number]: number }; // Per-page rotation for PDFs
 }
 
 export interface OutputSettings {

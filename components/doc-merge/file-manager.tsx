@@ -42,9 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EnhancedPasswordModal } from "./enhanced-password-modal";
-import { ImageCropModal } from "./image-crop-modal";
-import { PdfCropModal } from "./pdf-crop-modal";
-import { ImageViewModal } from "./image-view-modal";
+import { UniversalFileModal } from "./universal-file-modal";
 import * as pdfjsLib from "pdfjs-dist";
 
 // Set up PDF.js worker
@@ -65,6 +63,15 @@ export function FileManager() {
   const updateFileCrop = useMergeStore((state) => state.updateFileCrop);
   const updatePdfPageCrop = useMergeStore((state) => state.updatePdfPageCrop);
   const clearPdfPageCrops = useMergeStore((state) => state.clearPdfPageCrops);
+  const deletePdfPage = useMergeStore((state) => state.deletePdfPage);
+  const restorePdfPage = useMergeStore((state) => state.restorePdfPage);
+  const clearDeletedPages = useMergeStore((state) => state.clearDeletedPages);
+  const updatePdfPageRotation = useMergeStore(
+    (state) => state.updatePdfPageRotation,
+  );
+  const clearPdfPageRotations = useMergeStore(
+    (state) => state.clearPdfPageRotations,
+  );
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -83,14 +90,10 @@ export function FileManager() {
   // Password modal state
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
-  // View modal state
-  const [viewFileId, setViewFileId] = useState<string | null>(null);
-
-  // Crop modal state
-  const [cropFileId, setCropFileId] = useState<string | null>(null);
-
-  // PDF crop modal state
-  const [pdfCropFileId, setPdfCropFileId] = useState<string | null>(null);
+  // Universal file modal state (replaces viewFileId, cropFileId, pdfCropFileId)
+  const [activeModalFileId, setActiveModalFileId] = useState<string | null>(
+    null,
+  );
 
   // Selection state for batch operations
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -348,26 +351,23 @@ export function FileManager() {
     }
   };
 
-  // Crop image handler - opens crop modal
+  // Crop image handler - opens universal modal
   const handleCrop = (fileId: string) => {
     const file = files.find((f) => f.id === fileId);
     if (file) {
-      if (file.type === "image") {
-        setCropFileId(fileId);
-      } else if (file.type === "pdf") {
-        // Only allow crop if PDF is not locked
-        if (!file.isPasswordProtected || file.password) {
-          setPdfCropFileId(fileId);
-        }
+      // For PDFs, only allow if not locked
+      if (file.type === "pdf" && file.isPasswordProtected && !file.password) {
+        return;
       }
+      setActiveModalFileId(fileId);
     }
   };
 
-  // View image handler - opens view modal
+  // View image handler - opens universal modal
   const handleView = (fileId: string) => {
     const file = files.find((f) => f.id === fileId);
     if (file) {
-      setViewFileId(fileId);
+      setActiveModalFileId(fileId);
     }
   };
 
@@ -732,36 +732,34 @@ export function FileManager() {
         />
       )}
 
-      {/* Crop Modal */}
-      {cropFileId && (
-        <ImageCropModal
-          file={files.find((f) => f.id === cropFileId)!}
-          onApply={(cropData: CropData) => updateFileCrop(cropFileId, cropData)}
-          onReset={() => updateFileCrop(cropFileId, undefined)}
-          onClose={() => setCropFileId(null)}
-        />
-      )}
-
-      {/* PDF Crop Modal */}
-      {pdfCropFileId && (
-        <PdfCropModal
-          file={files.find((f) => f.id === pdfCropFileId)!}
-          onApplyPage={(pageNumber, cropData) =>
-            updatePdfPageCrop(pdfCropFileId, pageNumber, cropData)
+      {/* Universal File Modal - View & Edit */}
+      {activeModalFileId && (
+        <UniversalFileModal
+          file={files.find((f) => f.id === activeModalFileId)!}
+          onClose={() => setActiveModalFileId(null)}
+          onUpdateRotation={(rotation) =>
+            updateFileRotation(activeModalFileId, rotation)
           }
-          onResetPage={(pageNumber) =>
-            updatePdfPageCrop(pdfCropFileId, pageNumber, undefined)
+          onUpdateCrop={(cropData) =>
+            updateFileCrop(activeModalFileId, cropData)
           }
-          onResetAll={() => clearPdfPageCrops(pdfCropFileId)}
-          onClose={() => setPdfCropFileId(null)}
-        />
-      )}
-
-      {/* View Modal */}
-      {viewFileId && (
-        <ImageViewModal
-          file={files.find((f) => f.id === viewFileId)!}
-          onClose={() => setViewFileId(null)}
+          onUpdatePdfPageCrop={(pageNumber, cropData) =>
+            updatePdfPageCrop(activeModalFileId, pageNumber, cropData)
+          }
+          onClearPdfPageCrops={() => clearPdfPageCrops(activeModalFileId)}
+          onDeletePdfPage={(pageNumber) =>
+            deletePdfPage(activeModalFileId, pageNumber)
+          }
+          onRestorePdfPage={(pageNumber) =>
+            restorePdfPage(activeModalFileId, pageNumber)
+          }
+          onClearDeletedPages={() => clearDeletedPages(activeModalFileId)}
+          onUpdatePdfPageRotation={(pageNumber, rotation) =>
+            updatePdfPageRotation(activeModalFileId, pageNumber, rotation)
+          }
+          onClearPdfPageRotations={() =>
+            clearPdfPageRotations(activeModalFileId)
+          }
         />
       )}
     </div>

@@ -25,6 +25,15 @@ interface MergeStore extends MergeState {
     cropData: CropData | undefined,
   ) => void;
   clearPdfPageCrops: (id: string) => void;
+  deletePdfPage: (id: string, pageNumber: number) => void;
+  restorePdfPage: (id: string, pageNumber: number) => void;
+  clearDeletedPages: (id: string) => void;
+  updatePdfPageRotation: (
+    id: string,
+    pageNumber: number,
+    rotation: number,
+  ) => void;
+  clearPdfPageRotations: (id: string) => void;
   updateOutputSettings: (settings: Partial<OutputSettings>) => void;
   updateCompressionSettings: (settings: Partial<CompressionSettings>) => void;
   setLoading: (loading: boolean) => void;
@@ -136,6 +145,66 @@ export const useMergeStore = create<MergeStore>((set) => ({
     set((state) => ({
       files: state.files.map((f) =>
         f.id === id ? { ...f, pageCropData: undefined } : f,
+      ),
+    })),
+
+  deletePdfPage: (id: string, pageNumber: number) =>
+    set((state) => ({
+      files: state.files.map((f) => {
+        if (f.id !== id) return f;
+        const deletedPages = f.deletedPages || [];
+        if (deletedPages.includes(pageNumber)) return f;
+        return {
+          ...f,
+          deletedPages: [...deletedPages, pageNumber].sort((a, b) => a - b),
+        };
+      }),
+    })),
+
+  restorePdfPage: (id: string, pageNumber: number) =>
+    set((state) => ({
+      files: state.files.map((f) => {
+        if (f.id !== id) return f;
+        const deletedPages = f.deletedPages || [];
+        const newDeletedPages = deletedPages.filter((p) => p !== pageNumber);
+        return {
+          ...f,
+          deletedPages:
+            newDeletedPages.length > 0 ? newDeletedPages : undefined,
+        };
+      }),
+    })),
+
+  clearDeletedPages: (id: string) =>
+    set((state) => ({
+      files: state.files.map((f) =>
+        f.id === id ? { ...f, deletedPages: undefined } : f,
+      ),
+    })),
+
+  updatePdfPageRotation: (id: string, pageNumber: number, rotation: number) =>
+    set((state) => ({
+      files: state.files.map((f) => {
+        if (f.id !== id) return f;
+        const pageRotations = f.pageRotations || {};
+        if (rotation === 0) {
+          const { [pageNumber]: removed, ...rest } = pageRotations;
+          return {
+            ...f,
+            pageRotations: Object.keys(rest).length > 0 ? rest : undefined,
+          };
+        }
+        return {
+          ...f,
+          pageRotations: { ...pageRotations, [pageNumber]: rotation },
+        };
+      }),
+    })),
+
+  clearPdfPageRotations: (id: string) =>
+    set((state) => ({
+      files: state.files.map((f) =>
+        f.id === id ? { ...f, pageRotations: undefined } : f,
       ),
     })),
 

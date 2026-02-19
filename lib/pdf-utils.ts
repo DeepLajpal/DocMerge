@@ -386,10 +386,18 @@ export async function mergePDFsAndImages(
       const arrayBuffer = await file.file.arrayBuffer();
       const hasPageCrops =
         file.pageCropData && Object.keys(file.pageCropData).length > 0;
+      const hasDeletedPages = file.deletedPages && file.deletedPages.length > 0;
+      const hasPageRotations =
+        file.pageRotations && Object.keys(file.pageRotations).length > 0;
 
-      // For compression or cropped pages, we need to use pdf.js to render pages
+      // For compression, cropped pages, deleted pages, or rotated pages, we need to use pdf.js
       // Then embed them as images in the new PDF
-      if (compression.quality !== "high" || hasPageCrops) {
+      if (
+        compression.quality !== "high" ||
+        hasPageCrops ||
+        hasDeletedPages ||
+        hasPageRotations
+      ) {
         // Use canvas-based processing for compression and/or cropping
         try {
           const pdfDoc = await pdfjsLib.getDocument({
@@ -401,13 +409,26 @@ export async function mergePDFsAndImages(
           const jpegQuality = getJpegQuality(compression.quality);
 
           for (let i = 1; i <= pdfDoc.numPages; i++) {
+            // Skip deleted pages
+            if (file.deletedPages?.includes(i)) {
+              continue;
+            }
+
             const pdfPage = await pdfDoc.getPage(i);
-            const viewport = pdfPage.getViewport({ scale: 1 });
+            const pageRotation = file.pageRotations?.[i] ?? 0;
+            const viewport = pdfPage.getViewport({
+              scale: 1,
+              rotation: pageRotation,
+            });
             const pageCrop = file.pageCropData?.[i];
 
-            // If high quality + no crop for this page, try to copy directly
-            if (compression.quality === "high" && !pageCrop) {
-              // For uncropped pages in high quality mode, copy directly
+            // If high quality + no crop + no rotation for this page, try to copy directly
+            if (
+              compression.quality === "high" &&
+              !pageCrop &&
+              pageRotation === 0
+            ) {
+              // For uncropped/unrotated pages in high quality mode, copy directly
               try {
                 const pdfLibDoc = await PDFDocument.load(arrayBuffer, {
                   ignoreEncryption: !!file.password,
@@ -422,12 +443,13 @@ export async function mergePDFsAndImages(
               }
             }
 
-            // Render page to image (with optional crop)
+            // Render page to image (with optional crop and rotation)
             const renderResult = await renderPdfPageToImageWithCrop(
               pdfPage,
               dpiScale,
               jpegQuality,
               pageCrop,
+              pageRotation,
             );
 
             // Track if quality was reduced

@@ -164,13 +164,14 @@ export async function renderPdfPageToImage(
   pdfPage: any,
   scale: number,
   jpegQuality: number,
+  rotation: number = 0,
 ): Promise<{
   dataUrl: string;
   width: number;
   height: number;
   qualityReduced: boolean;
 }> {
-  const viewport = pdfPage.getViewport({ scale });
+  const viewport = pdfPage.getViewport({ scale, rotation });
 
   // Check if dimensions need scaling for mobile compatibility
   let targetWidth = viewport.width;
@@ -219,6 +220,7 @@ export async function renderPdfPageToImage(
     // Get viewport for current attempt size
     const attemptViewport = pdfPage.getViewport({
       scale: currentScale * retryScale,
+      rotation,
     });
 
     try {
@@ -268,7 +270,7 @@ export async function renderPdfPageToImage(
 }
 
 /**
- * Render a PDF page to an image with optional cropping
+ * Render a PDF page to an image with optional cropping and rotation
  * This enables cropping and compression of PDF pages
  */
 export async function renderPdfPageToImageWithCrop(
@@ -276,6 +278,7 @@ export async function renderPdfPageToImageWithCrop(
   scale: number,
   jpegQuality: number,
   cropData?: CropData,
+  rotation: number = 0,
 ): Promise<{
   dataUrl: string;
   width: number;
@@ -284,10 +287,10 @@ export async function renderPdfPageToImageWithCrop(
 }> {
   // If no crop, use the standard function
   if (!cropData) {
-    return renderPdfPageToImage(pdfPage, scale, jpegQuality);
+    return renderPdfPageToImage(pdfPage, scale, jpegQuality, rotation);
   }
 
-  const viewport = pdfPage.getViewport({ scale });
+  const viewport = pdfPage.getViewport({ scale, rotation });
 
   // Calculate cropped dimensions
   const fullWidth = viewport.width;
@@ -346,6 +349,7 @@ export async function renderPdfPageToImageWithCrop(
     // Get viewport for current attempt size
     const attemptViewport = pdfPage.getViewport({
       scale: scale * retryScale,
+      rotation,
     });
 
     try {

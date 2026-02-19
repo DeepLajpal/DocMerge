@@ -46,6 +46,9 @@ async function mergeOnServer(
         rotation: file.rotation || 0,
         password: file.password,
         cropData: file.cropData,
+        pageCropData: file.pageCropData,
+        deletedPages: file.deletedPages,
+        pageRotations: file.pageRotations,
       };
     }),
   );
