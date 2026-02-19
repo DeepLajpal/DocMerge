@@ -7,6 +7,7 @@ import {
   CompressionSettings,
   MergeResult,
   MergeState,
+  CropData,
 } from "./types";
 
 interface MergeStore extends MergeState {
@@ -16,6 +17,7 @@ interface MergeStore extends MergeState {
   updatePassword: (id: string, password: string) => void;
   updateFileProtection: (id: string, isPasswordProtected: boolean) => void;
   updateFileRotation: (id: string, rotation: number) => void;
+  updateFileCrop: (id: string, cropData: CropData | undefined) => void;
   updateOutputSettings: (settings: Partial<OutputSettings>) => void;
   updateCompressionSettings: (settings: Partial<CompressionSettings>) => void;
   setLoading: (loading: boolean) => void;
@@ -91,6 +93,11 @@ export const useMergeStore = create<MergeStore>((set) => ({
   updateFileRotation: (id: string, rotation: number) =>
     set((state) => ({
       files: state.files.map((f) => (f.id === id ? { ...f, rotation } : f)),
+    })),
+
+  updateFileCrop: (id: string, cropData: CropData | undefined) =>
+    set((state) => ({
+      files: state.files.map((f) => (f.id === id ? { ...f, cropData } : f)),
     })),
 
   updateOutputSettings: (settings: Partial<OutputSettings>) =>

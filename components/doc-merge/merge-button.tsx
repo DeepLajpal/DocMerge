@@ -45,6 +45,7 @@ async function mergeOnServer(
         data: base64,
         rotation: file.rotation || 0,
         password: file.password,
+        cropData: file.cropData,
       };
     }),
   );

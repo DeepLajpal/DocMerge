@@ -19,6 +19,12 @@ interface FileInput {
   data: string; // Base64 encoded
   rotation?: number;
   password?: string;
+  cropData?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
 interface MergeRequest {
@@ -188,6 +194,22 @@ export async function POST(request: NextRequest) {
 
           let width = metadata.width;
           let height = metadata.height;
+
+          // Apply crop if specified (before rotation/resize)
+          if (file.cropData && file.cropData.width > 0 && file.cropData.height > 0) {
+            const extractLeft = Math.round(file.cropData.x * width);
+            const extractTop = Math.round(file.cropData.y * height);
+            const extractWidth = Math.round(file.cropData.width * width);
+            const extractHeight = Math.round(file.cropData.height * height);
+            image = image.extract({
+              left: extractLeft,
+              top: extractTop,
+              width: extractWidth,
+              height: extractHeight,
+            });
+            width = extractWidth;
+            height = extractHeight;
+          }
 
           // Apply rotation if specified
           if (file.rotation && file.rotation !== 0) {

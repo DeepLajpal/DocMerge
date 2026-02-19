@@ -1,6 +1,6 @@
 import { PDFDocument, PDFPage, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import { UploadedFile, OutputSettings, CompressionSettings } from "./types";
+import { UploadedFile, OutputSettings, CompressionSettings, CropData } from "./types";
 import {
   getImageResampleRatio,
   getJpegQuality,
@@ -75,6 +75,7 @@ export async function extractImageAsPage(
   settings: OutputSettings,
   compression?: CompressionSettings,
   rotation: number = 0,
+  cropData?: CropData,
 ): Promise<{
   width: number;
   height: number;
@@ -94,6 +95,20 @@ export async function extractImageAsPage(
         let width = img.width;
         let height = img.height;
         let qualityReduced = false;
+
+        // Apply crop if specified (before any other processing)
+        let cropSrcX = 0;
+        let cropSrcY = 0;
+        let cropSrcW = width;
+        let cropSrcH = height;
+        if (cropData) {
+          cropSrcX = Math.round(cropData.x * width);
+          cropSrcY = Math.round(cropData.y * height);
+          cropSrcW = Math.round(cropData.width * width);
+          cropSrcH = Math.round(cropData.height * height);
+          width = cropSrcW;
+          height = cropSrcH;
+        }
 
         // Apply image resampling based on compression quality
         if (compression) {
@@ -155,6 +170,7 @@ export async function extractImageAsPage(
             ctx.rotate((rotation * Math.PI) / 180);
             ctx.drawImage(
               img,
+              cropSrcX, cropSrcY, cropSrcW, cropSrcH,
               -drawWidth / 2,
               -drawHeight / 2,
               drawWidth,
@@ -240,6 +256,30 @@ export async function extractImageAsPage(
         } else {
           // No rotation needed - use original image data
           const image = e.target?.result as string;
+
+          // If cropped but no rotation, we need a canvas to apply the crop
+          if (cropData) {
+            const canvasResult = createSafeCanvas(width, height);
+            if (canvasResult) {
+              const { canvas, ctx } = canvasResult;
+              ctx.fillStyle = "#ffffff";
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, cropSrcX, cropSrcY, cropSrcW, cropSrcH, 0, 0, width, height);
+              const croppedImage = canvas.toDataURL("image/png");
+              if (validateCanvasOutput(croppedImage)) {
+                logImageProcessing(file.name, img.width, img.height, width, height, true, 0);
+                resolve({
+                  width,
+                  height,
+                  image: croppedImage,
+                  originalWidth: img.width,
+                  originalHeight: img.height,
+                  qualityReduced,
+                });
+                return;
+              }
+            }
+          }
 
           logImageProcessing(
             file.name,
@@ -415,6 +455,7 @@ export async function mergePDFsAndImages(
         settings,
         compression,
         file.rotation || 0,
+        file.cropData,
       );
 
       // Track if quality was reduced

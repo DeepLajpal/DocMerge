@@ -21,10 +21,11 @@ import {
   CheckCircle2,
   Eye,
   RotateCw,
+  Crop,
 } from "lucide-react";
 import { useMergeStore } from "@/lib/store";
 import { isValidFileType, formatFileSize } from "@/lib/file-utils";
-import { UploadedFile } from "@/lib/types";
+import { UploadedFile, CropData } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EnhancedPasswordModal } from "./enhanced-password-modal";
+import { ImageCropModal } from "./image-crop-modal";
 import * as pdfjsLib from "pdfjs-dist";
 
 // Set up PDF.js worker
@@ -58,6 +60,7 @@ export function FileManager() {
   const removeFile = useMergeStore((state) => state.removeFile);
   const reorderFiles = useMergeStore((state) => state.reorderFiles);
   const updateFileRotation = useMergeStore((state) => state.updateFileRotation);
+  const updateFileCrop = useMergeStore((state) => state.updateFileCrop);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -75,6 +78,9 @@ export function FileManager() {
 
   // Password modal state
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+
+  // Crop modal state
+  const [cropFileId, setCropFileId] = useState<string | null>(null);
 
   // Selection state for batch operations
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -329,6 +335,14 @@ export function FileManager() {
       const currentRotation = file.rotation || 0;
       const newRotation = (currentRotation + 90) % 360;
       updateFileRotation(fileId, newRotation);
+    }
+  };
+
+  // Crop image handler - opens crop modal
+  const handleCrop = (fileId: string) => {
+    const file = files.find((f) => f.id === fileId);
+    if (file && file.type === "image") {
+      setCropFileId(fileId);
     }
   };
 
@@ -614,6 +628,11 @@ export function FileManager() {
                       ? () => handleRotate(file.id)
                       : undefined
                   }
+                  onCrop={
+                    file.type === "image"
+                      ? () => handleCrop(file.id)
+                      : undefined
+                  }
                   onDragStart={(e) => handleDragStart(e, file.id)}
                   onDragOver={(e) => handleDragOver(e, file.id)}
                   onDragLeave={handleDragLeave}
@@ -641,6 +660,11 @@ export function FileManager() {
                   onRotate={
                     file.type === "image"
                       ? () => handleRotate(file.id)
+                      : undefined
+                  }
+                  onCrop={
+                    file.type === "image"
+                      ? () => handleCrop(file.id)
                       : undefined
                   }
                   onDragStart={(e) => handleDragStart(e, file.id)}
@@ -676,6 +700,16 @@ export function FileManager() {
           onClose={() => setSelectedFileId(null)}
         />
       )}
+
+      {/* Crop Modal */}
+      {cropFileId && (
+        <ImageCropModal
+          file={files.find((f) => f.id === cropFileId)!}
+          onApply={(cropData: CropData) => updateFileCrop(cropFileId, cropData)}
+          onReset={() => updateFileCrop(cropFileId, undefined)}
+          onClose={() => setCropFileId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -693,6 +727,7 @@ interface FileItemProps {
   onDelete: () => void;
   onPasswordClick: () => void;
   onRotate?: () => void;
+  onCrop?: () => void;
   onOrderChange: (newPosition: number) => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -712,6 +747,7 @@ function ListFileItem({
   onDelete,
   onPasswordClick,
   onRotate,
+  onCrop,
   onOrderChange,
   onDragStart,
   onDragOver,
@@ -864,6 +900,13 @@ function ListFileItem({
               <span className="text-blue-600 font-medium">↻ {rotation}°</span>
             </>
           )}
+          {/* Crop indicator in info */}
+          {file.type === "image" && file.cropData && (
+            <>
+              <span>•</span>
+              <span className="text-green-600 font-medium">✂ Cropped</span>
+            </>
+          )}
           {isLocked && (
             <>
               <span>•</span>
@@ -896,6 +939,22 @@ function ListFileItem({
               className="h-4 w-4 transition-transform duration-300"
               style={{ transform: `rotate(${rotation}deg)` }}
             />
+          </Button>
+        )}
+        {/* Crop button - only for images */}
+        {onCrop && file.type === "image" && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCrop}
+            className={`h-8 w-8 transition-all active:scale-90 ${
+              file.cropData
+                ? "text-green-600 hover:bg-green-50 hover:text-green-700"
+                : "text-purple-500 hover:bg-purple-50 hover:text-purple-600"
+            }`}
+            title={file.cropData ? "Edit crop" : "Crop image"}
+          >
+            <Crop className="h-4 w-4" />
           </Button>
         )}
         {file.isPasswordProtected && (
@@ -948,6 +1007,7 @@ function GridFileItem({
   onDelete,
   onPasswordClick,
   onRotate,
+  onCrop,
   onOrderChange,
   onDragStart,
   onDragOver,
@@ -1063,6 +1123,24 @@ function GridFileItem({
         </button>
       )}
 
+      {/* Crop button - only for images */}
+      {onCrop && file.type === "image" && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onCrop();
+          }}
+          className={`absolute left-10 bottom-2 z-10 flex h-7 w-7 items-center justify-center rounded-full shadow-md transition-all hover:scale-110 ${
+            file.cropData
+              ? "bg-green-500 text-white hover:bg-green-600"
+              : "bg-purple-500 text-white hover:bg-purple-600"
+          }`}
+          title={file.cropData ? "Edit crop" : "Crop image"}
+        >
+          <Crop className="h-3.5 w-3.5" />
+        </button>
+      )}
+
       {/* Delete button */}
       <button
         onClick={onDelete}
@@ -1092,6 +1170,12 @@ function GridFileItem({
             {file.type === "image" && rotation > 0 && (
               <div className="absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[8px] font-bold text-white shadow">
                 {rotation}°
+              </div>
+            )}
+            {/* Crop indicator badge */}
+            {file.type === "image" && file.cropData && (
+              <div className="absolute top-1 left-7 flex h-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[8px] font-bold text-white shadow">
+                ✂
               </div>
             )}
           </div>

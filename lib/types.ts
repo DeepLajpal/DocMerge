@@ -1,3 +1,10 @@
+export interface CropData {
+  x: number;      // Left offset as percentage (0–1)
+  y: number;      // Top offset as percentage (0–1)
+  width: number;  // Width as percentage (0–1)
+  height: number; // Height as percentage (0–1)
+}
+
 export interface UploadedFile {
   id: string;
   name: string;
@@ -10,6 +17,7 @@ export interface UploadedFile {
   order: number;
   thumbnail?: string;
   rotation?: number;
+  cropData?: CropData;
 }
 
 export interface OutputSettings {
