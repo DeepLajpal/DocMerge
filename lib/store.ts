@@ -21,6 +21,7 @@ interface MergeStore extends MergeState {
   setLoading: (loading: boolean) => void;
   setMergeResult: (result: MergeResult) => void;
   setError: (error: string | undefined) => void;
+  setQualityWarning: (warning: string | undefined) => void;
   resetApp: () => void;
 }
 
@@ -42,6 +43,7 @@ export const useMergeStore = create<MergeStore>((set) => ({
   compressionSettings: defaultCompressionSettings,
   isLoading: false,
   error: undefined,
+  qualityWarning: undefined,
 
   addFiles: (newFiles: File[]) =>
     set((state) => {
@@ -114,6 +116,11 @@ export const useMergeStore = create<MergeStore>((set) => ({
       error,
     })),
 
+  setQualityWarning: (warning: string | undefined) =>
+    set(() => ({
+      qualityWarning: warning,
+    })),
+
   resetApp: () =>
     set(() => ({
       files: [],
@@ -122,5 +129,6 @@ export const useMergeStore = create<MergeStore>((set) => ({
       mergeResult: undefined,
       isLoading: false,
       error: undefined,
+      qualityWarning: undefined,
     })),
 }));

@@ -29,6 +29,8 @@ export interface CompressionSettings {
 export interface MergeResult {
   pages: number;
   finalSize: number;
+  qualityReduced?: boolean;
+  qualityWarningMessage?: string;
 }
 
 export interface MergeState {
@@ -38,4 +40,5 @@ export interface MergeState {
   mergeResult?: MergeResult;
   isLoading: boolean;
   error?: string;
+  qualityWarning?: string;
 }

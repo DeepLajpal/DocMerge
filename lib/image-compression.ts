@@ -1,4 +1,15 @@
 import { CompressionSettings } from "./types";
+import {
+  getScaledDimensions,
+  validateCanvasOutput,
+  createSafeCanvas,
+  processImageWithRetry,
+  logImageProcessing,
+  type CanvasResult,
+} from "./canvas-utils";
+
+// Re-export CanvasResult type for consumers
+export type { CanvasResult };
 
 /**
  * Get the image resampling ratio based on compression quality setting
@@ -37,6 +48,7 @@ export function getJpegQuality(quality: string): number {
 /**
  * Resample an image to a target size using canvas
  * This reduces memory footprint and file size when embedded in PDF
+ * Now includes validation and automatic retry for mobile device compatibility
  */
 export async function resampleImage(
   imageDataUrl: string,
@@ -44,41 +56,50 @@ export async function resampleImage(
   targetHeight: number,
   jpegQuality: number = 0.85,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
+  const result = await resampleImageWithResult(
+    imageDataUrl,
+    targetWidth,
+    targetHeight,
+    jpegQuality,
+  );
+  return result.dataUrl;
+}
 
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        const ctx = canvas.getContext("2d");
+/**
+ * Resample an image with detailed result including quality reduction info
+ * Use this when you need to track if quality was reduced for user notification
+ */
+export async function resampleImageWithResult(
+  imageDataUrl: string,
+  targetWidth: number,
+  targetHeight: number,
+  jpegQuality: number = 0.85,
+  rotation: number = 0,
+): Promise<CanvasResult> {
+  try {
+    const result = await processImageWithRetry(
+      imageDataUrl,
+      targetWidth,
+      targetHeight,
+      jpegQuality,
+      rotation,
+    );
 
-        if (!ctx) {
-          reject(new Error("Failed to get canvas context"));
-          return;
-        }
+    logImageProcessing(
+      "image",
+      targetWidth,
+      targetHeight,
+      result.finalWidth,
+      result.finalHeight,
+      true,
+      result.retryCount,
+    );
 
-        // Use high-quality image smoothing for better visual results
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-
-        // Draw the image scaled to target dimensions
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-
-        // Convert to JPEG with specified quality for better compression
-        const resampledUrl = canvas.toDataURL("image/jpeg", jpegQuality);
-        resolve(resampledUrl);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    img.onerror = () =>
-      reject(new Error("Failed to load image for resampling"));
-    img.src = imageDataUrl;
-  });
+    return result;
+  } catch (error) {
+    logImageProcessing("image", targetWidth, targetHeight, 0, 0, false);
+    throw error;
+  }
 }
 
 /**
@@ -137,35 +158,111 @@ export function getDpiScale(quality: string): number {
 /**
  * Render a PDF page to a canvas and return as JPEG data URL
  * This enables compression of PDF pages by re-rendering them as images
+ * Includes validation and automatic scaling for mobile device compatibility
  */
 export async function renderPdfPageToImage(
   pdfPage: any,
   scale: number,
   jpegQuality: number,
-): Promise<{ dataUrl: string; width: number; height: number }> {
+): Promise<{
+  dataUrl: string;
+  width: number;
+  height: number;
+  qualityReduced: boolean;
+}> {
   const viewport = pdfPage.getViewport({ scale });
 
-  const canvas = document.createElement("canvas");
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
+  // Check if dimensions need scaling for mobile compatibility
+  let targetWidth = viewport.width;
+  let targetHeight = viewport.height;
+  let qualityReduced = false;
+  let currentScale = scale;
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("Failed to get canvas context");
+  const scaled = getScaledDimensions(targetWidth, targetHeight);
+  if (scaled.wasScaled) {
+    targetWidth = scaled.width;
+    targetHeight = scaled.height;
+    currentScale = scale * scaled.scaleFactor;
+    qualityReduced = true;
+    console.info(
+      `[image-compression] PDF page scaled for mobile compatibility: ` +
+        `${Math.round(viewport.width)}x${Math.round(viewport.height)} -> ${targetWidth}x${targetHeight}`,
+    );
   }
 
-  // Render the PDF page to canvas
-  await pdfPage.render({
-    canvasContext: ctx,
-    viewport: viewport,
-  }).promise;
+  // Try rendering with progressively smaller sizes
+  const maxRetries = 3;
+  for (let retry = 0; retry <= maxRetries; retry++) {
+    const retryScale = retry === 0 ? 1 : Math.pow(0.7, retry);
+    const attemptWidth = Math.floor(targetWidth * retryScale);
+    const attemptHeight = Math.floor(targetHeight * retryScale);
 
-  // Convert to JPEG with specified quality
-  const dataUrl = canvas.toDataURL("image/jpeg", jpegQuality);
+    if (attemptWidth < 100 || attemptHeight < 100) {
+      throw new Error(
+        `PDF page rendering failed after ${retry} retries. ` +
+          `Your device may have limited graphics memory.`,
+      );
+    }
 
-  return {
-    dataUrl,
-    width: viewport.width,
-    height: viewport.height,
-  };
+    const canvasResult = createSafeCanvas(attemptWidth, attemptHeight);
+    if (!canvasResult) {
+      qualityReduced = true;
+      continue;
+    }
+
+    const { canvas, ctx } = canvasResult;
+
+    // Fill with white background to prevent black pages on mobile browsers
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, attemptWidth, attemptHeight);
+
+    // Get viewport for current attempt size
+    const attemptViewport = pdfPage.getViewport({
+      scale: currentScale * retryScale,
+    });
+
+    try {
+      // Render the PDF page to canvas
+      await pdfPage.render({
+        canvasContext: ctx,
+        viewport: attemptViewport,
+      }).promise;
+
+      // Convert to JPEG with specified quality
+      const dataUrl = canvas.toDataURL("image/jpeg", jpegQuality);
+
+      // Validate the output
+      if (!validateCanvasOutput(dataUrl)) {
+        console.warn(
+          `[image-compression] PDF page canvas output invalid, retry ${retry + 1}/${maxRetries}`,
+        );
+        qualityReduced = true;
+        continue;
+      }
+
+      if (retry > 0) {
+        console.info(
+          `[image-compression] PDF page rendered after ${retry} retry(s): ${attemptWidth}x${attemptHeight}`,
+        );
+      }
+
+      return {
+        dataUrl,
+        width: attemptWidth,
+        height: attemptHeight,
+        qualityReduced: qualityReduced || retry > 0,
+      };
+    } catch (renderError) {
+      console.warn(
+        `[image-compression] PDF page render failed, retry ${retry + 1}/${maxRetries}:`,
+        renderError,
+      );
+      qualityReduced = true;
+    }
+  }
+
+  throw new Error(
+    `PDF page rendering failed after ${maxRetries} retries. ` +
+      `Your device may have limited graphics memory.`,
+  );
 }

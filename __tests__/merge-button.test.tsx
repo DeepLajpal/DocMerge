@@ -6,7 +6,11 @@ import type { UploadedFile } from "../lib/types";
 
 // Mock the PDF utils to avoid actual PDF processing in tests
 vi.mock("../lib/pdf-utils", () => ({
-  mergePDFsAndImages: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+  mergePDFsAndImages: vi.fn().mockResolvedValue({
+    pdfBytes: new Uint8Array([1, 2, 3]),
+    qualityReduced: false,
+    reducedFiles: [],
+  }),
 }));
 
 describe("MergeButton", () => {
@@ -25,6 +29,7 @@ describe("MergeButton", () => {
       },
       isLoading: false,
       error: undefined,
+      qualityWarning: undefined,
       mergeResult: undefined,
     });
   });

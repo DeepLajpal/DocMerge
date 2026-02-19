@@ -5,10 +5,17 @@ import {
   getImageResampleRatio,
   getJpegQuality,
   resampleImage,
+  resampleImageWithResult,
   calculateTargetImageDimensions,
   getDpiScale,
   renderPdfPageToImage,
 } from "./image-compression";
+import {
+  getScaledDimensions,
+  validateCanvasOutput,
+  createSafeCanvas,
+  logImageProcessing,
+} from "./canvas-utils";
 
 // Set up PDF.js worker - use local file for offline/PWA support
 if (typeof window !== "undefined") {
@@ -73,6 +80,7 @@ export async function extractImageAsPage(
   image: string;
   originalWidth: number;
   originalHeight: number;
+  qualityReduced: boolean;
 }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -82,6 +90,7 @@ export async function extractImageAsPage(
       img.onload = () => {
         let width = img.width;
         let height = img.height;
+        let qualityReduced = false;
 
         // Apply image resampling based on compression quality
         if (compression) {
@@ -90,44 +99,140 @@ export async function extractImageAsPage(
           height = Math.round(height * resampleRatio);
         }
 
+        // Apply safe canvas dimension limits for mobile compatibility
+        const scaledDims = getScaledDimensions(width, height);
+        if (scaledDims.wasScaled) {
+          width = scaledDims.width;
+          height = scaledDims.height;
+          qualityReduced = true;
+          console.info(
+            `[pdf-utils] Image ${file.name} scaled for mobile compatibility: ` +
+              `${img.width}x${img.height} -> ${width}x${height}`,
+          );
+        }
+
         // Apply rotation - swap dimensions for 90/270 degree rotations
         const isRotated90or270 = rotation === 90 || rotation === 270;
         const finalWidth = isRotated90or270 ? height : width;
         const finalHeight = isRotated90or270 ? width : height;
 
-        // Create canvas to apply rotation
-        const canvas = document.createElement("canvas");
-        canvas.width = finalWidth;
-        canvas.height = finalHeight;
-        const ctx = canvas.getContext("2d");
+        if (rotation !== 0) {
+          // Create canvas to apply rotation with retry logic
+          const maxRetries = 3;
 
-        if (ctx && rotation !== 0) {
-          ctx.translate(finalWidth / 2, finalHeight / 2);
-          ctx.rotate((rotation * Math.PI) / 180);
-          ctx.drawImage(img, -width / 2, -height / 2, width, height);
-          const rotatedImage = canvas.toDataURL("image/png");
-          resolve({
-            width: finalWidth,
-            height: finalHeight,
-            image: rotatedImage,
-            originalWidth: img.width,
-            originalHeight: img.height,
-          });
+          for (let retry = 0; retry <= maxRetries; retry++) {
+            const retryScale = retry === 0 ? 1 : Math.pow(0.7, retry);
+            const attemptWidth = Math.floor(finalWidth * retryScale);
+            const attemptHeight = Math.floor(finalHeight * retryScale);
+            const drawWidth = Math.floor(width * retryScale);
+            const drawHeight = Math.floor(height * retryScale);
+
+            if (attemptWidth < 100 || attemptHeight < 100) {
+              reject(
+                new Error(
+                  `Image ${file.name} processing failed after ${retry} retries. ` +
+                    `Your device may have limited graphics memory.`,
+                ),
+              );
+              return;
+            }
+
+            const canvasResult = createSafeCanvas(attemptWidth, attemptHeight);
+            if (!canvasResult) {
+              qualityReduced = true;
+              continue;
+            }
+
+            const { canvas, ctx } = canvasResult;
+
+            // Fill with white background to prevent black pages on mobile browsers
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, attemptWidth, attemptHeight);
+            ctx.translate(attemptWidth / 2, attemptHeight / 2);
+            ctx.rotate((rotation * Math.PI) / 180);
+            ctx.drawImage(
+              img,
+              -drawWidth / 2,
+              -drawHeight / 2,
+              drawWidth,
+              drawHeight,
+            );
+
+            const rotatedImage = canvas.toDataURL("image/png");
+
+            // Validate the canvas output
+            if (!validateCanvasOutput(rotatedImage)) {
+              console.warn(
+                `[pdf-utils] Canvas output invalid for ${file.name}, retry ${retry + 1}/${maxRetries}`,
+              );
+              qualityReduced = true;
+              continue;
+            }
+
+            if (retry > 0) {
+              console.info(
+                `[pdf-utils] Image ${file.name} processed after ${retry} retry(s): ${attemptWidth}x${attemptHeight}`,
+              );
+            }
+
+            logImageProcessing(
+              file.name,
+              img.width,
+              img.height,
+              attemptWidth,
+              attemptHeight,
+              true,
+              retry,
+            );
+
+            resolve({
+              width: attemptWidth,
+              height: attemptHeight,
+              image: rotatedImage,
+              originalWidth: img.width,
+              originalHeight: img.height,
+              qualityReduced: qualityReduced || retry > 0,
+            });
+            return;
+          }
+
+          // All retries failed
+          reject(
+            new Error(
+              `Image ${file.name} rotation failed after ${maxRetries} retries. ` +
+                `Your device may have limited graphics memory.`,
+            ),
+          );
         } else {
+          // No rotation needed - use original image data
           const image = e.target?.result as string;
+
+          logImageProcessing(
+            file.name,
+            img.width,
+            img.height,
+            width,
+            height,
+            true,
+            0,
+          );
+
           resolve({
             width,
             height,
             image,
             originalWidth: img.width,
             originalHeight: img.height,
+            qualityReduced,
           });
         }
       };
-      img.onerror = () => reject(new Error("Failed to load image"));
+      img.onerror = () =>
+        reject(new Error(`Failed to load image: ${file.name}`));
       img.src = e.target?.result as string;
     };
-    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.onerror = () =>
+      reject(new Error(`Failed to read file: ${file.name}`));
     reader.readAsDataURL(file);
   });
 }
@@ -151,13 +256,23 @@ export function getPageDimensions(
   return dims;
 }
 
+export interface MergeResult {
+  pdfBytes: Uint8Array;
+  qualityReduced: boolean;
+  reducedFiles: string[];
+}
+
 export async function mergePDFsAndImages(
   files: UploadedFile[],
   settings: OutputSettings,
   compression: CompressionSettings,
-): Promise<Uint8Array> {
+): Promise<MergeResult> {
   const mergedPdf = await PDFDocument.create();
   const pageDims = getPageDimensions(settings.pageSize, settings.orientation);
+
+  // Track quality reductions for user notification
+  let qualityReduced = false;
+  const reducedFiles: string[] = [];
 
   for (const file of files) {
     if (file.type === "pdf") {
@@ -182,11 +297,19 @@ export async function mergePDFsAndImages(
             const viewport = pdfPage.getViewport({ scale: 1 });
 
             // Render page to image
-            const { dataUrl, width, height } = await renderPdfPageToImage(
+            const renderResult = await renderPdfPageToImage(
               pdfPage,
               dpiScale,
               jpegQuality,
             );
+
+            // Track if quality was reduced
+            if (renderResult.qualityReduced) {
+              qualityReduced = true;
+              if (!reducedFiles.includes(file.name)) {
+                reducedFiles.push(file.name);
+              }
+            }
 
             // Create a new page with original dimensions
             const pageWidth = viewport.width;
@@ -194,7 +317,7 @@ export async function mergePDFsAndImages(
             const newPage = mergedPdf.addPage([pageWidth, pageHeight]);
 
             // Embed the rendered image
-            const image = await mergedPdf.embedJpg(dataUrl);
+            const image = await mergedPdf.embedJpg(renderResult.dataUrl);
             newPage.drawImage(image, {
               x: 0,
               y: 0,
@@ -255,6 +378,15 @@ export async function mergePDFsAndImages(
         compression,
         file.rotation || 0,
       );
+
+      // Track if quality was reduced
+      if (imageData.qualityReduced) {
+        qualityReduced = true;
+        if (!reducedFiles.includes(file.name)) {
+          reducedFiles.push(file.name);
+        }
+      }
+
       const page = mergedPdf.addPage([pageDims.width, pageDims.height]);
 
       // Calculate scaling to fit image on page
@@ -289,13 +421,22 @@ export async function mergePDFsAndImages(
         } else {
           // Resample image data for better compression and apply JPEG quality
           const jpegQuality = getJpegQuality(compression.quality);
-          const resampledUrl = await resampleImage(
+          const resampleResult = await resampleImageWithResult(
             imageData.image,
             imageData.width,
             imageData.height,
             jpegQuality,
           );
-          const image = await mergedPdf.embedJpg(resampledUrl);
+
+          // Track if quality was reduced during resampling
+          if (resampleResult.qualityReduced) {
+            qualityReduced = true;
+            if (!reducedFiles.includes(file.name)) {
+              reducedFiles.push(file.name);
+            }
+          }
+
+          const image = await mergedPdf.embedJpg(resampleResult.dataUrl);
           page.drawImage(image, {
             x,
             y,
@@ -306,13 +447,20 @@ export async function mergePDFsAndImages(
       } catch (error) {
         // Fallback for JPEG with balanced quality
         const jpegQuality = getJpegQuality("balanced");
-        const resampledUrl = await resampleImage(
+        const resampleResult = await resampleImageWithResult(
           imageData.image,
           imageData.width,
           imageData.height,
           jpegQuality,
         );
-        const image = await mergedPdf.embedJpg(resampledUrl);
+
+        // Track quality reduction from fallback
+        qualityReduced = true;
+        if (!reducedFiles.includes(file.name)) {
+          reducedFiles.push(file.name);
+        }
+
+        const image = await mergedPdf.embedJpg(resampleResult.dataUrl);
         page.drawImage(image, {
           x,
           y,
@@ -334,7 +482,11 @@ export async function mergePDFsAndImages(
     useObjectStreams: true,
   });
 
-  return pdfBytes;
+  return {
+    pdfBytes,
+    qualityReduced,
+    reducedFiles,
+  };
 }
 
 export function applyCompressionSettings(
