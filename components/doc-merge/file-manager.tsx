@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { EnhancedPasswordModal } from "./enhanced-password-modal";
 import { ImageCropModal } from "./image-crop-modal";
+import { ImageViewModal } from "./image-view-modal";
 import * as pdfjsLib from "pdfjs-dist";
 
 // Set up PDF.js worker
@@ -78,6 +79,9 @@ export function FileManager() {
 
   // Password modal state
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+
+  // View modal state
+  const [viewFileId, setViewFileId] = useState<string | null>(null);
 
   // Crop modal state
   const [cropFileId, setCropFileId] = useState<string | null>(null);
@@ -345,6 +349,16 @@ export function FileManager() {
       setCropFileId(fileId);
     }
   };
+
+  // View image handler - opens view modal
+  const handleView = (fileId: string) => {
+    const file = files.find((f) => f.id === fileId);
+    if (file) {
+      setViewFileId(fileId);
+    }
+  };
+
+
 
   // Order change handler - move file to specific position
   const handleOrderChange = (fileId: string, newPosition: number) => {
@@ -628,6 +642,7 @@ export function FileManager() {
                       ? () => handleRotate(file.id)
                       : undefined
                   }
+                  onView={() => handleView(file.id)}
                   onCrop={
                     file.type === "image"
                       ? () => handleCrop(file.id)
@@ -662,6 +677,7 @@ export function FileManager() {
                       ? () => handleRotate(file.id)
                       : undefined
                   }
+                  onView={() => handleView(file.id)}
                   onCrop={
                     file.type === "image"
                       ? () => handleCrop(file.id)
@@ -710,6 +726,14 @@ export function FileManager() {
           onClose={() => setCropFileId(null)}
         />
       )}
+
+      {/* View Modal */}
+      {viewFileId && (
+        <ImageViewModal
+          file={files.find((f) => f.id === viewFileId)!}
+          onClose={() => setViewFileId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -727,6 +751,7 @@ interface FileItemProps {
   onDelete: () => void;
   onPasswordClick: () => void;
   onRotate?: () => void;
+  onView?: () => void;
   onCrop?: () => void;
   onOrderChange: (newPosition: number) => void;
   onDragStart: (e: React.DragEvent) => void;
@@ -747,6 +772,7 @@ function ListFileItem({
   onDelete,
   onPasswordClick,
   onRotate,
+  onView,
   onCrop,
   onOrderChange,
   onDragStart,
@@ -809,11 +835,17 @@ function ListFileItem({
               : isLocked
                 ? "border-amber-400 bg-amber-50 hover:border-amber-500"
                 : "border-gray-200 bg-white hover:border-gray-300"
-      }`}
+      } ${onView && !isLocked ? "cursor-pointer hover:bg-gray-50" : ""}`}
+      onClick={() => {
+        if (onView && !isLocked) onView();
+      }}
     >
       {/* Selection checkbox - hidden on mobile */}
       <button
-        onClick={onSelect}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
         className={`hidden sm:flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
           isSelected
             ? "border-blue-500 bg-blue-500 text-white"
@@ -843,7 +875,10 @@ function ListFileItem({
         />
       ) : (
         <button
-          onClick={() => setIsEditingOrder(true)}
+        onClick={(e) => {
+            e.stopPropagation();
+            setIsEditingOrder(true);
+          }}
           className="flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded bg-gray-100 text-xs font-medium text-gray-600 hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer"
           title="Click to change order"
         >
@@ -852,7 +887,9 @@ function ListFileItem({
       )}
 
       {/* File icon with rotation indicator */}
-      <div className="shrink-0 relative">
+      <div 
+        className="shrink-0 relative"
+      >
         {file.type === "pdf" ? (
           <div
             className={`rounded p-1.5 sm:p-2 ${isLocked ? "bg-amber-100" : "bg-red-100"}`}
@@ -926,12 +963,30 @@ function ListFileItem({
 
       {/* Actions - Compact */}
       <div className="flex items-center gap-0.5 shrink-0">
+        {/* View button */}
+        {onView && !isLocked && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              onView();
+            }}
+            className="h-8 w-8 text-gray-500 hover:bg-blue-50 hover:text-blue-600 active:scale-90 transition-all"
+            title="View file"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+        )}
         {/* Rotate button - only for images */}
         {onRotate && file.type === "image" && (
           <Button
             variant="ghost"
             size="icon"
-            onClick={onRotate}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRotate();
+            }}
             className="h-8 w-8 text-blue-500 hover:bg-blue-50 hover:text-blue-600 active:scale-90 transition-all"
             title={`Rotate 90° (currently ${rotation}°)`}
           >
@@ -946,7 +1001,10 @@ function ListFileItem({
           <Button
             variant="ghost"
             size="icon"
-            onClick={onCrop}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCrop();
+            }}
             className={`h-8 w-8 transition-all active:scale-90 ${
               file.cropData
                 ? "text-green-600 hover:bg-green-50 hover:text-green-700"
@@ -961,7 +1019,10 @@ function ListFileItem({
           <Button
             variant={isLocked ? "default" : "ghost"}
             size="icon"
-            onClick={onPasswordClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPasswordClick();
+            }}
             className={`h-8 w-8 ${
               isLocked
                 ? "bg-amber-500 hover:bg-amber-600 text-white animate-pulse"
@@ -983,7 +1044,10 @@ function ListFileItem({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onDelete}
+          onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
           className="h-8 w-8 text-gray-400 hover:bg-red-50 hover:text-red-600"
           title="Remove file"
         >
@@ -1007,6 +1071,7 @@ function GridFileItem({
   onDelete,
   onPasswordClick,
   onRotate,
+  onView,
   onCrop,
   onOrderChange,
   onDragStart,
@@ -1068,7 +1133,10 @@ function GridFileItem({
               : isLocked
                 ? "border-amber-400 bg-amber-50 hover:border-amber-500"
                 : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
-      }`}
+      } ${onView && !isLocked ? "cursor-pointer hover:bg-gray-50" : ""}`}
+      onClick={() => {
+        if (onView && !isLocked) onView();
+      }}
     >
       {/* Selection checkbox */}
       <button
@@ -1143,7 +1211,10 @@ function GridFileItem({
 
       {/* Delete button */}
       <button
-        onClick={onDelete}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
         className="absolute right-2 bottom-2 z-10 flex h-6 w-6 items-center justify-center rounded bg-red-500 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-600"
       >
         <Trash2 className="h-3 w-3" />
@@ -1152,7 +1223,9 @@ function GridFileItem({
       {/* File preview with thumbnail */}
       <div className="flex flex-col items-center pt-4">
         {thumbnail ? (
-          <div className="relative h-20 w-full overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center">
+          <div 
+            className="relative h-20 w-full overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center group/preview"
+          >
             <img
               src={thumbnail}
               alt={file.name}
@@ -1178,18 +1251,38 @@ function GridFileItem({
                 ✂
               </div>
             )}
-          </div>
-        ) : file.type === "pdf" ? (
-          <div
-            className={`flex h-16 w-16 items-center justify-center rounded-lg ${isLocked ? "bg-amber-100" : "bg-red-100"}`}
-          >
-            <FileText
-              className={`h-8 w-8 ${isLocked ? "text-amber-600" : "text-red-600"}`}
-            />
+            
+            {/* View button overlay */}
+            {onView && !isLocked && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/preview:bg-black/10 pointer-events-none">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onView();
+                  }}
+                  className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-gray-700 opacity-0 shadow-sm transition-all hover:scale-110 hover:text-blue-600 group-hover/preview:opacity-100"
+                  title="View file"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-blue-100">
-            <Image className="h-8 w-8 text-blue-600" />
+          <div 
+            className={`flex h-16 w-16 items-center justify-center rounded-lg ${
+              file.type === "pdf" 
+                ? isLocked ? "bg-amber-100" : "bg-red-100"
+                : "bg-blue-100"
+            }`}
+          >
+            {file.type === "pdf" ? (
+              <FileText
+                className={`h-8 w-8 ${isLocked ? "text-amber-600" : "text-red-600"}`}
+              />
+            ) : (
+              <Image className="h-8 w-8 text-blue-600" />
+            )}
           </div>
         )}
 
