@@ -1,6 +1,6 @@
 import { PDFDocument, PDFPage, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import { UploadedFile, OutputSettings, CompressionSettings, CropData } from "./types";
+import { UploadedFile, OutputSettings, CompressionSettings, CropData, PageCropData } from "./types";
 import {
   getImageResampleRatio,
   getJpegQuality,
@@ -9,6 +9,7 @@ import {
   calculateTargetImageDimensions,
   getDpiScale,
   renderPdfPageToImage,
+  renderPdfPageToImageWithCrop,
 } from "./image-compression";
 import {
   getScaledDimensions,
@@ -356,11 +357,12 @@ export async function mergePDFsAndImages(
     if (file.type === "pdf") {
       // Handle PDF file
       const arrayBuffer = await file.file.arrayBuffer();
+      const hasPageCrops = file.pageCropData && Object.keys(file.pageCropData).length > 0;
 
-      // For compression, we need to use pdf.js to render pages
+      // For compression or cropped pages, we need to use pdf.js to render pages
       // Then embed them as images in the new PDF
-      if (compression.quality !== "high") {
-        // Use canvas-based compression: render PDF pages as images
+      if (compression.quality !== "high" || hasPageCrops) {
+        // Use canvas-based processing for compression and/or cropping
         try {
           const pdfDoc = await pdfjsLib.getDocument({
             data: arrayBuffer,
@@ -373,12 +375,29 @@ export async function mergePDFsAndImages(
           for (let i = 1; i <= pdfDoc.numPages; i++) {
             const pdfPage = await pdfDoc.getPage(i);
             const viewport = pdfPage.getViewport({ scale: 1 });
+            const pageCrop = file.pageCropData?.[i];
 
-            // Render page to image
-            const renderResult = await renderPdfPageToImage(
+            // If high quality + no crop for this page, try to copy directly
+            if (compression.quality === "high" && !pageCrop) {
+              // For uncropped pages in high quality mode, copy directly
+              try {
+                const pdfLibDoc = await PDFDocument.load(arrayBuffer, {
+                  ignoreEncryption: !!file.password,
+                });
+                const [copiedPage] = await mergedPdf.copyPages(pdfLibDoc, [i - 1]);
+                mergedPdf.addPage(copiedPage);
+                continue;
+              } catch {
+                // Fallback to rendering if direct copy fails
+              }
+            }
+
+            // Render page to image (with optional crop)
+            const renderResult = await renderPdfPageToImageWithCrop(
               pdfPage,
               dpiScale,
               jpegQuality,
+              pageCrop,
             );
 
             // Track if quality was reduced
@@ -389,9 +408,18 @@ export async function mergePDFsAndImages(
               }
             }
 
-            // Create a new page with original dimensions
-            const pageWidth = viewport.width;
-            const pageHeight = viewport.height;
+            // Determine final page dimensions
+            let pageWidth: number;
+            let pageHeight: number;
+            if (pageCrop) {
+              // Cropped dimensions
+              pageWidth = viewport.width * pageCrop.width;
+              pageHeight = viewport.height * pageCrop.height;
+            } else {
+              pageWidth = viewport.width;
+              pageHeight = viewport.height;
+            }
+
             const newPage = mergedPdf.addPage([pageWidth, pageHeight]);
 
             // Embed the rendered image
@@ -405,7 +433,7 @@ export async function mergePDFsAndImages(
           }
         } catch (error) {
           console.error(
-            "Compression failed, falling back to direct copy:",
+            "PDF processing failed, falling back to direct copy:",
             error,
           );
           // Fallback to direct copy if rendering fails
@@ -418,35 +446,6 @@ export async function mergePDFsAndImages(
           );
           copiedPages.forEach((page) => mergedPdf.addPage(page));
         }
-      } else {
-        // High quality: copy pages directly without compression
-        let pdf: any;
-
-        try {
-          // Try loading without password first
-          pdf = await PDFDocument.load(arrayBuffer);
-        } catch (error: any) {
-          // If password protected, try with password
-          if (file.password) {
-            try {
-              pdf = await PDFDocument.load(arrayBuffer, {
-                ignoreEncryption: true,
-              });
-            } catch (innerError) {
-              throw new Error(
-                `Failed to load password-protected PDF: ${file.name}`,
-              );
-            }
-          } else {
-            throw new Error(`Failed to load PDF: ${file.name}`);
-          }
-        }
-
-        const copiedPages = await mergedPdf.copyPages(
-          pdf,
-          pdf.getPageIndices(),
-        );
-        copiedPages.forEach((page) => mergedPdf.addPage(page));
       }
     } else {
       // Handle image file

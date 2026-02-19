@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { EnhancedPasswordModal } from "./enhanced-password-modal";
 import { ImageCropModal } from "./image-crop-modal";
+import { PdfCropModal } from "./pdf-crop-modal";
 import { ImageViewModal } from "./image-view-modal";
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -62,6 +63,8 @@ export function FileManager() {
   const reorderFiles = useMergeStore((state) => state.reorderFiles);
   const updateFileRotation = useMergeStore((state) => state.updateFileRotation);
   const updateFileCrop = useMergeStore((state) => state.updateFileCrop);
+  const updatePdfPageCrop = useMergeStore((state) => state.updatePdfPageCrop);
+  const clearPdfPageCrops = useMergeStore((state) => state.clearPdfPageCrops);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -85,6 +88,9 @@ export function FileManager() {
 
   // Crop modal state
   const [cropFileId, setCropFileId] = useState<string | null>(null);
+
+  // PDF crop modal state
+  const [pdfCropFileId, setPdfCropFileId] = useState<string | null>(null);
 
   // Selection state for batch operations
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -345,8 +351,15 @@ export function FileManager() {
   // Crop image handler - opens crop modal
   const handleCrop = (fileId: string) => {
     const file = files.find((f) => f.id === fileId);
-    if (file && file.type === "image") {
-      setCropFileId(fileId);
+    if (file) {
+      if (file.type === "image") {
+        setCropFileId(fileId);
+      } else if (file.type === "pdf") {
+        // Only allow crop if PDF is not locked
+        if (!file.isPasswordProtected || file.password) {
+          setPdfCropFileId(fileId);
+        }
+      }
     }
   };
 
@@ -644,7 +657,8 @@ export function FileManager() {
                   }
                   onView={() => handleView(file.id)}
                   onCrop={
-                    file.type === "image"
+                    file.type === "image" ||
+                    (file.type === "pdf" && (!file.isPasswordProtected || file.password))
                       ? () => handleCrop(file.id)
                       : undefined
                   }
@@ -724,6 +738,21 @@ export function FileManager() {
           onApply={(cropData: CropData) => updateFileCrop(cropFileId, cropData)}
           onReset={() => updateFileCrop(cropFileId, undefined)}
           onClose={() => setCropFileId(null)}
+        />
+      )}
+
+      {/* PDF Crop Modal */}
+      {pdfCropFileId && (
+        <PdfCropModal
+          file={files.find((f) => f.id === pdfCropFileId)!}
+          onApplyPage={(pageNumber, cropData) =>
+            updatePdfPageCrop(pdfCropFileId, pageNumber, cropData)
+          }
+          onResetPage={(pageNumber) =>
+            updatePdfPageCrop(pdfCropFileId, pageNumber, undefined)
+          }
+          onResetAll={() => clearPdfPageCrops(pdfCropFileId)}
+          onClose={() => setPdfCropFileId(null)}
         />
       )}
 
@@ -944,6 +973,15 @@ function ListFileItem({
               <span className="text-green-600 font-medium">✂ Cropped</span>
             </>
           )}
+          {/* PDF page crop indicator */}
+          {file.type === "pdf" && file.pageCropData && Object.keys(file.pageCropData).length > 0 && (
+            <>
+              <span>•</span>
+              <span className="text-green-600 font-medium">
+                ✂ {Object.keys(file.pageCropData).length} page{Object.keys(file.pageCropData).length > 1 ? "s" : ""} cropped
+              </span>
+            </>
+          )}
           {isLocked && (
             <>
               <span>•</span>
@@ -996,8 +1034,8 @@ function ListFileItem({
             />
           </Button>
         )}
-        {/* Crop button - only for images */}
-        {onCrop && file.type === "image" && (
+        {/* Crop button - for images and unlocked PDFs */}
+        {onCrop && (
           <Button
             variant="ghost"
             size="icon"
@@ -1006,11 +1044,19 @@ function ListFileItem({
               onCrop();
             }}
             className={`h-8 w-8 transition-all active:scale-90 ${
-              file.cropData
+              file.cropData || (file.pageCropData && Object.keys(file.pageCropData).length > 0)
                 ? "text-green-600 hover:bg-green-50 hover:text-green-700"
                 : "text-purple-500 hover:bg-purple-50 hover:text-purple-600"
             }`}
-            title={file.cropData ? "Edit crop" : "Crop image"}
+            title={
+              file.type === "pdf"
+                ? file.pageCropData && Object.keys(file.pageCropData).length > 0
+                  ? "Edit page crops"
+                  : "Crop PDF pages"
+                : file.cropData
+                  ? "Edit crop"
+                  : "Crop image"
+            }
           >
             <Crop className="h-4 w-4" />
           </Button>
@@ -1191,19 +1237,27 @@ function GridFileItem({
         </button>
       )}
 
-      {/* Crop button - only for images */}
-      {onCrop && file.type === "image" && (
+      {/* Crop button - for images and unlocked PDFs */}
+      {onCrop && (
         <button
           onClick={(e) => {
             e.stopPropagation();
             onCrop();
           }}
           className={`absolute left-10 bottom-2 z-10 flex h-7 w-7 items-center justify-center rounded-full shadow-md transition-all hover:scale-110 ${
-            file.cropData
+            file.cropData || (file.pageCropData && Object.keys(file.pageCropData).length > 0)
               ? "bg-green-500 text-white hover:bg-green-600"
               : "bg-purple-500 text-white hover:bg-purple-600"
           }`}
-          title={file.cropData ? "Edit crop" : "Crop image"}
+          title={
+            file.type === "pdf"
+              ? file.pageCropData && Object.keys(file.pageCropData).length > 0
+                ? "Edit page crops"
+                : "Crop PDF pages"
+              : file.cropData
+                ? "Edit crop"
+                : "Crop image"
+          }
         >
           <Crop className="h-3.5 w-3.5" />
         </button>
@@ -1249,6 +1303,12 @@ function GridFileItem({
             {file.type === "image" && file.cropData && (
               <div className="absolute top-1 left-7 flex h-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[8px] font-bold text-white shadow">
                 ✂
+              </div>
+            )}
+            {/* PDF page crop indicator badge */}
+            {file.type === "pdf" && file.pageCropData && Object.keys(file.pageCropData).length > 0 && (
+              <div className="absolute top-1 left-1 flex h-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[8px] font-bold text-white shadow">
+                ✂ {Object.keys(file.pageCropData).length}
               </div>
             )}
             

@@ -8,6 +8,7 @@ import {
   MergeResult,
   MergeState,
   CropData,
+  PageCropData,
 } from "./types";
 
 interface MergeStore extends MergeState {
@@ -18,6 +19,8 @@ interface MergeStore extends MergeState {
   updateFileProtection: (id: string, isPasswordProtected: boolean) => void;
   updateFileRotation: (id: string, rotation: number) => void;
   updateFileCrop: (id: string, cropData: CropData | undefined) => void;
+  updatePdfPageCrop: (id: string, pageNumber: number, cropData: CropData | undefined) => void;
+  clearPdfPageCrops: (id: string) => void;
   updateOutputSettings: (settings: Partial<OutputSettings>) => void;
   updateCompressionSettings: (settings: Partial<CompressionSettings>) => void;
   setLoading: (loading: boolean) => void;
@@ -98,6 +101,26 @@ export const useMergeStore = create<MergeStore>((set) => ({
   updateFileCrop: (id: string, cropData: CropData | undefined) =>
     set((state) => ({
       files: state.files.map((f) => (f.id === id ? { ...f, cropData } : f)),
+    })),
+
+  updatePdfPageCrop: (id: string, pageNumber: number, cropData: CropData | undefined) =>
+    set((state) => ({
+      files: state.files.map((f) => {
+        if (f.id !== id) return f;
+        const currentPageCrops = f.pageCropData || {};
+        if (cropData) {
+          return { ...f, pageCropData: { ...currentPageCrops, [pageNumber]: cropData } };
+        } else {
+          // Remove crop for this page
+          const { [pageNumber]: removed, ...rest } = currentPageCrops;
+          return { ...f, pageCropData: Object.keys(rest).length > 0 ? rest : undefined };
+        }
+      }),
+    })),
+
+  clearPdfPageCrops: (id: string) =>
+    set((state) => ({
+      files: state.files.map((f) => (f.id === id ? { ...f, pageCropData: undefined } : f)),
     })),
 
   updateOutputSettings: (settings: Partial<OutputSettings>) =>

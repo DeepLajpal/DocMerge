@@ -5,6 +5,11 @@ export interface CropData {
   height: number; // Height as percentage (0–1)
 }
 
+// Per-page crop data for PDFs (1-indexed page numbers)
+export interface PageCropData {
+  [pageNumber: number]: CropData;
+}
+
 export interface UploadedFile {
   id: string;
   name: string;
@@ -18,6 +23,7 @@ export interface UploadedFile {
   thumbnail?: string;
   rotation?: number;
   cropData?: CropData;
+  pageCropData?: PageCropData;  // Per-page crop data for PDFs
 }
 
 export interface OutputSettings {

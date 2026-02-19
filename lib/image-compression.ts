@@ -1,4 +1,4 @@
-import { CompressionSettings } from "./types";
+import { CompressionSettings, CropData } from "./types";
 import {
   getScaledDimensions,
   validateCanvasOutput,
@@ -263,6 +263,158 @@ export async function renderPdfPageToImage(
 
   throw new Error(
     `PDF page rendering failed after ${maxRetries} retries. ` +
+      `Your device may have limited graphics memory.`,
+  );
+}
+
+/**
+ * Render a PDF page to an image with optional cropping
+ * This enables cropping and compression of PDF pages
+ */
+export async function renderPdfPageToImageWithCrop(
+  pdfPage: any,
+  scale: number,
+  jpegQuality: number,
+  cropData?: CropData,
+): Promise<{
+  dataUrl: string;
+  width: number;
+  height: number;
+  qualityReduced: boolean;
+}> {
+  // If no crop, use the standard function
+  if (!cropData) {
+    return renderPdfPageToImage(pdfPage, scale, jpegQuality);
+  }
+
+  const viewport = pdfPage.getViewport({ scale });
+
+  // Calculate cropped dimensions
+  const fullWidth = viewport.width;
+  const fullHeight = viewport.height;
+  const cropX = Math.round(cropData.x * fullWidth);
+  const cropY = Math.round(cropData.y * fullHeight);
+  const cropWidth = Math.round(cropData.width * fullWidth);
+  const cropHeight = Math.round(cropData.height * fullHeight);
+
+  // Check if dimensions need scaling for mobile compatibility
+  let targetWidth = cropWidth;
+  let targetHeight = cropHeight;
+  let qualityReduced = false;
+
+  const scaled = getScaledDimensions(targetWidth, targetHeight);
+  if (scaled.wasScaled) {
+    targetWidth = scaled.width;
+    targetHeight = scaled.height;
+    qualityReduced = true;
+    console.info(
+      `[image-compression] Cropped PDF page scaled for mobile compatibility: ` +
+        `${cropWidth}x${cropHeight} -> ${targetWidth}x${targetHeight}`,
+    );
+  }
+
+  // Try rendering with progressively smaller sizes
+  const maxRetries = 3;
+  for (let retry = 0; retry <= maxRetries; retry++) {
+    const retryScale = retry === 0 ? 1 : Math.pow(0.7, retry);
+    const attemptWidth = Math.floor(targetWidth * retryScale);
+    const attemptHeight = Math.floor(targetHeight * retryScale);
+
+    if (attemptWidth < 100 || attemptHeight < 100) {
+      throw new Error(
+        `Cropped PDF page rendering failed after ${retry} retries. ` +
+          `Your device may have limited graphics memory.`,
+      );
+    }
+
+    // First render the full page to a temp canvas
+    const fullCanvasResult = createSafeCanvas(
+      Math.floor(fullWidth * retryScale),
+      Math.floor(fullHeight * retryScale)
+    );
+    if (!fullCanvasResult) {
+      qualityReduced = true;
+      continue;
+    }
+
+    const { canvas: fullCanvas, ctx: fullCtx } = fullCanvasResult;
+
+    // Fill with white background
+    fullCtx.fillStyle = "#ffffff";
+    fullCtx.fillRect(0, 0, fullCanvas.width, fullCanvas.height);
+
+    // Get viewport for current attempt size
+    const attemptViewport = pdfPage.getViewport({
+      scale: scale * retryScale,
+    });
+
+    try {
+      // Render the full PDF page
+      await pdfPage.render({
+        canvasContext: fullCtx,
+        viewport: attemptViewport,
+      }).promise;
+
+      // Now create a crop canvas and extract the cropped region
+      const cropCanvasResult = createSafeCanvas(attemptWidth, attemptHeight);
+      if (!cropCanvasResult) {
+        qualityReduced = true;
+        continue;
+      }
+
+      const { canvas: cropCanvas, ctx: cropCtx } = cropCanvasResult;
+
+      // Fill with white background
+      cropCtx.fillStyle = "#ffffff";
+      cropCtx.fillRect(0, 0, attemptWidth, attemptHeight);
+
+      // Draw the cropped region from the full canvas
+      const srcX = Math.round(cropX * retryScale);
+      const srcY = Math.round(cropY * retryScale);
+      const srcW = Math.round(cropWidth * retryScale);
+      const srcH = Math.round(cropHeight * retryScale);
+
+      cropCtx.drawImage(
+        fullCanvas,
+        srcX, srcY, srcW, srcH,
+        0, 0, attemptWidth, attemptHeight
+      );
+
+      // Convert to JPEG with specified quality
+      const dataUrl = cropCanvas.toDataURL("image/jpeg", jpegQuality);
+
+      // Validate the output
+      if (!validateCanvasOutput(dataUrl)) {
+        console.warn(
+          `[image-compression] Cropped PDF page canvas output invalid, retry ${retry + 1}/${maxRetries}`,
+        );
+        qualityReduced = true;
+        continue;
+      }
+
+      if (retry > 0) {
+        console.info(
+          `[image-compression] Cropped PDF page rendered after ${retry} retry(s): ${attemptWidth}x${attemptHeight}`,
+        );
+      }
+
+      return {
+        dataUrl,
+        width: attemptWidth,
+        height: attemptHeight,
+        qualityReduced: qualityReduced || retry > 0,
+      };
+    } catch (renderError) {
+      console.warn(
+        `[image-compression] Cropped PDF page render failed, retry ${retry + 1}/${maxRetries}:`,
+        renderError,
+      );
+      qualityReduced = true;
+    }
+  }
+
+  throw new Error(
+    `Cropped PDF page rendering failed after ${maxRetries} retries. ` +
       `Your device may have limited graphics memory.`,
   );
 }
