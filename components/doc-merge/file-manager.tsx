@@ -371,8 +371,6 @@ export function FileManager() {
     }
   };
 
-
-
   // Order change handler - move file to specific position
   const handleOrderChange = (fileId: string, newPosition: number) => {
     const currentIndex = files.findIndex((f) => f.id === fileId);
@@ -498,7 +496,9 @@ export function FileManager() {
             </Button>
           </div>
 
-          <p className="text-xs text-gray-400">Supported: PDF, JPG, PNG · Paste images with Ctrl+V</p>
+          <p className="text-xs text-gray-400">
+            Supported: PDF, JPG, PNG · Paste images with Ctrl+V
+          </p>
         </div>
       </div>
 
@@ -658,7 +658,8 @@ export function FileManager() {
                   onView={() => handleView(file.id)}
                   onCrop={
                     file.type === "image" ||
-                    (file.type === "pdf" && (!file.isPasswordProtected || file.password))
+                    (file.type === "pdf" &&
+                      (!file.isPasswordProtected || file.password))
                       ? () => handleCrop(file.id)
                       : undefined
                   }
@@ -904,7 +905,7 @@ function ListFileItem({
         />
       ) : (
         <button
-        onClick={(e) => {
+          onClick={(e) => {
             e.stopPropagation();
             setIsEditingOrder(true);
           }}
@@ -916,9 +917,7 @@ function ListFileItem({
       )}
 
       {/* File icon with rotation indicator */}
-      <div 
-        className="shrink-0 relative"
-      >
+      <div className="shrink-0 relative">
         {file.type === "pdf" ? (
           <div
             className={`rounded p-1.5 sm:p-2 ${isLocked ? "bg-amber-100" : "bg-red-100"}`}
@@ -974,14 +973,17 @@ function ListFileItem({
             </>
           )}
           {/* PDF page crop indicator */}
-          {file.type === "pdf" && file.pageCropData && Object.keys(file.pageCropData).length > 0 && (
-            <>
-              <span>•</span>
-              <span className="text-green-600 font-medium">
-                ✂ {Object.keys(file.pageCropData).length} page{Object.keys(file.pageCropData).length > 1 ? "s" : ""} cropped
-              </span>
-            </>
-          )}
+          {file.type === "pdf" &&
+            file.pageCropData &&
+            Object.keys(file.pageCropData).length > 0 && (
+              <>
+                <span>•</span>
+                <span className="text-green-600 font-medium">
+                  ✂ {Object.keys(file.pageCropData).length} page
+                  {Object.keys(file.pageCropData).length > 1 ? "s" : ""} cropped
+                </span>
+              </>
+            )}
           {isLocked && (
             <>
               <span>•</span>
@@ -1044,7 +1046,8 @@ function ListFileItem({
               onCrop();
             }}
             className={`h-8 w-8 transition-all active:scale-90 ${
-              file.cropData || (file.pageCropData && Object.keys(file.pageCropData).length > 0)
+              file.cropData ||
+              (file.pageCropData && Object.keys(file.pageCropData).length > 0)
                 ? "text-green-600 hover:bg-green-50 hover:text-green-700"
                 : "text-purple-500 hover:bg-purple-50 hover:text-purple-600"
             }`}
@@ -1091,9 +1094,9 @@ function ListFileItem({
           variant="ghost"
           size="icon"
           onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
+            e.stopPropagation();
+            onDelete();
+          }}
           className="h-8 w-8 text-gray-400 hover:bg-red-50 hover:text-red-600"
           title="Remove file"
         >
@@ -1245,7 +1248,8 @@ function GridFileItem({
             onCrop();
           }}
           className={`absolute left-10 bottom-2 z-10 flex h-7 w-7 items-center justify-center rounded-full shadow-md transition-all hover:scale-110 ${
-            file.cropData || (file.pageCropData && Object.keys(file.pageCropData).length > 0)
+            file.cropData ||
+            (file.pageCropData && Object.keys(file.pageCropData).length > 0)
               ? "bg-green-500 text-white hover:bg-green-600"
               : "bg-purple-500 text-white hover:bg-purple-600"
           }`}
@@ -1277,9 +1281,7 @@ function GridFileItem({
       {/* File preview with thumbnail */}
       <div className="flex flex-col items-center pt-4">
         {thumbnail ? (
-          <div 
-            className="relative h-20 w-full overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center group/preview"
-          >
+          <div className="relative h-20 w-full overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center group/preview">
             <img
               src={thumbnail}
               alt={file.name}
@@ -1306,12 +1308,14 @@ function GridFileItem({
               </div>
             )}
             {/* PDF page crop indicator badge */}
-            {file.type === "pdf" && file.pageCropData && Object.keys(file.pageCropData).length > 0 && (
-              <div className="absolute top-1 left-1 flex h-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[8px] font-bold text-white shadow">
-                ✂ {Object.keys(file.pageCropData).length}
-              </div>
-            )}
-            
+            {file.type === "pdf" &&
+              file.pageCropData &&
+              Object.keys(file.pageCropData).length > 0 && (
+                <div className="absolute top-1 left-1 flex h-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[8px] font-bold text-white shadow">
+                  ✂ {Object.keys(file.pageCropData).length}
+                </div>
+              )}
+
             {/* View button overlay */}
             {onView && !isLocked && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/preview:bg-black/10 pointer-events-none">
@@ -1329,10 +1333,12 @@ function GridFileItem({
             )}
           </div>
         ) : (
-          <div 
+          <div
             className={`flex h-16 w-16 items-center justify-center rounded-lg ${
-              file.type === "pdf" 
-                ? isLocked ? "bg-amber-100" : "bg-red-100"
+              file.type === "pdf"
+                ? isLocked
+                  ? "bg-amber-100"
+                  : "bg-red-100"
                 : "bg-blue-100"
             }`}
           >

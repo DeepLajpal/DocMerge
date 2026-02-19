@@ -1,6 +1,12 @@
 import { PDFDocument, PDFPage, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import { UploadedFile, OutputSettings, CompressionSettings, CropData, PageCropData } from "./types";
+import {
+  UploadedFile,
+  OutputSettings,
+  CompressionSettings,
+  CropData,
+  PageCropData,
+} from "./types";
 import {
   getImageResampleRatio,
   getJpegQuality,
@@ -171,7 +177,10 @@ export async function extractImageAsPage(
             ctx.rotate((rotation * Math.PI) / 180);
             ctx.drawImage(
               img,
-              cropSrcX, cropSrcY, cropSrcW, cropSrcH,
+              cropSrcX,
+              cropSrcY,
+              cropSrcW,
+              cropSrcH,
               -drawWidth / 2,
               -drawHeight / 2,
               drawWidth,
@@ -265,10 +274,28 @@ export async function extractImageAsPage(
               const { canvas, ctx } = canvasResult;
               ctx.fillStyle = "#ffffff";
               ctx.fillRect(0, 0, width, height);
-              ctx.drawImage(img, cropSrcX, cropSrcY, cropSrcW, cropSrcH, 0, 0, width, height);
+              ctx.drawImage(
+                img,
+                cropSrcX,
+                cropSrcY,
+                cropSrcW,
+                cropSrcH,
+                0,
+                0,
+                width,
+                height,
+              );
               const croppedImage = canvas.toDataURL("image/png");
               if (validateCanvasOutput(croppedImage)) {
-                logImageProcessing(file.name, img.width, img.height, width, height, true, 0);
+                logImageProcessing(
+                  file.name,
+                  img.width,
+                  img.height,
+                  width,
+                  height,
+                  true,
+                  0,
+                );
                 resolve({
                   width,
                   height,
@@ -357,7 +384,8 @@ export async function mergePDFsAndImages(
     if (file.type === "pdf") {
       // Handle PDF file
       const arrayBuffer = await file.file.arrayBuffer();
-      const hasPageCrops = file.pageCropData && Object.keys(file.pageCropData).length > 0;
+      const hasPageCrops =
+        file.pageCropData && Object.keys(file.pageCropData).length > 0;
 
       // For compression or cropped pages, we need to use pdf.js to render pages
       // Then embed them as images in the new PDF
@@ -384,7 +412,9 @@ export async function mergePDFsAndImages(
                 const pdfLibDoc = await PDFDocument.load(arrayBuffer, {
                   ignoreEncryption: !!file.password,
                 });
-                const [copiedPage] = await mergedPdf.copyPages(pdfLibDoc, [i - 1]);
+                const [copiedPage] = await mergedPdf.copyPages(pdfLibDoc, [
+                  i - 1,
+                ]);
                 mergedPdf.addPage(copiedPage);
                 continue;
               } catch {

@@ -33,7 +33,17 @@ interface PdfCropModalProps {
   onClose: () => void;
 }
 
-type DragMode = "none" | "move" | "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
+type DragMode =
+  | "none"
+  | "move"
+  | "nw"
+  | "ne"
+  | "sw"
+  | "se"
+  | "n"
+  | "s"
+  | "e"
+  | "w";
 
 export function PdfCropModal({
   file,
@@ -68,7 +78,7 @@ export function PdfCropModal({
 
   // Track crops per page during this session
   const [sessionCrops, setSessionCrops] = useState<PageCropData>(
-    file.pageCropData || {}
+    file.pageCropData || {},
   );
 
   // Load PDF document
@@ -227,12 +237,14 @@ export function PdfCropModal({
   };
 
   // Get event coordinates relative to container
-  const getEventCoords = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
+  const getEventCoords = (
+    e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent,
+  ) => {
     const container = containerRef.current;
     if (!container) return { x: 0, y: 0 };
     const rect = container.getBoundingClientRect();
-    const clientX = "touches" in e ? e.touches[0]?.clientX ?? 0 : e.clientX;
-    const clientY = "touches" in e ? e.touches[0]?.clientY ?? 0 : e.clientY;
+    const clientX = "touches" in e ? (e.touches[0]?.clientX ?? 0) : e.clientX;
+    const clientY = "touches" in e ? (e.touches[0]?.clientY ?? 0) : e.clientY;
     return {
       x: clientX - rect.left,
       y: clientY - rect.top,
@@ -240,7 +252,10 @@ export function PdfCropModal({
   };
 
   // Handle drag start on handles or crop area
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, mode: DragMode) => {
+  const handleDragStart = (
+    e: React.MouseEvent | React.TouchEvent,
+    mode: DragMode,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     const coords = getEventCoords(e);
@@ -279,8 +294,20 @@ export function PdfCropModal({
 
         switch (dragMode) {
           case "nw": {
-            const newX = Math.max(0, Math.min(dragStartRect.x + dragStartRect.width - minSize, dragStartRect.x + deltaXPercent));
-            const newY = Math.max(0, Math.min(dragStartRect.y + dragStartRect.height - minSize, dragStartRect.y + deltaYPercent));
+            const newX = Math.max(
+              0,
+              Math.min(
+                dragStartRect.x + dragStartRect.width - minSize,
+                dragStartRect.x + deltaXPercent,
+              ),
+            );
+            const newY = Math.max(
+              0,
+              Math.min(
+                dragStartRect.y + dragStartRect.height - minSize,
+                dragStartRect.y + deltaYPercent,
+              ),
+            );
             newRect = {
               x: newX,
               y: newY,
@@ -290,8 +317,20 @@ export function PdfCropModal({
             break;
           }
           case "ne": {
-            const newY = Math.max(0, Math.min(dragStartRect.y + dragStartRect.height - minSize, dragStartRect.y + deltaYPercent));
-            const newWidth = Math.max(minSize, Math.min(1 - dragStartRect.x, dragStartRect.width + deltaXPercent));
+            const newY = Math.max(
+              0,
+              Math.min(
+                dragStartRect.y + dragStartRect.height - minSize,
+                dragStartRect.y + deltaYPercent,
+              ),
+            );
+            const newWidth = Math.max(
+              minSize,
+              Math.min(
+                1 - dragStartRect.x,
+                dragStartRect.width + deltaXPercent,
+              ),
+            );
             newRect = {
               x: dragStartRect.x,
               y: newY,
@@ -301,8 +340,20 @@ export function PdfCropModal({
             break;
           }
           case "sw": {
-            const newX = Math.max(0, Math.min(dragStartRect.x + dragStartRect.width - minSize, dragStartRect.x + deltaXPercent));
-            const newHeight = Math.max(minSize, Math.min(1 - dragStartRect.y, dragStartRect.height + deltaYPercent));
+            const newX = Math.max(
+              0,
+              Math.min(
+                dragStartRect.x + dragStartRect.width - minSize,
+                dragStartRect.x + deltaXPercent,
+              ),
+            );
+            const newHeight = Math.max(
+              minSize,
+              Math.min(
+                1 - dragStartRect.y,
+                dragStartRect.height + deltaYPercent,
+              ),
+            );
             newRect = {
               x: newX,
               y: dragStartRect.y,
@@ -312,8 +363,20 @@ export function PdfCropModal({
             break;
           }
           case "se": {
-            const newWidth = Math.max(minSize, Math.min(1 - dragStartRect.x, dragStartRect.width + deltaXPercent));
-            const newHeight = Math.max(minSize, Math.min(1 - dragStartRect.y, dragStartRect.height + deltaYPercent));
+            const newWidth = Math.max(
+              minSize,
+              Math.min(
+                1 - dragStartRect.x,
+                dragStartRect.width + deltaXPercent,
+              ),
+            );
+            const newHeight = Math.max(
+              minSize,
+              Math.min(
+                1 - dragStartRect.y,
+                dragStartRect.height + deltaYPercent,
+              ),
+            );
             newRect = {
               ...dragStartRect,
               width: newWidth,
@@ -322,7 +385,13 @@ export function PdfCropModal({
             break;
           }
           case "n": {
-            const newY = Math.max(0, Math.min(dragStartRect.y + dragStartRect.height - minSize, dragStartRect.y + deltaYPercent));
+            const newY = Math.max(
+              0,
+              Math.min(
+                dragStartRect.y + dragStartRect.height - minSize,
+                dragStartRect.y + deltaYPercent,
+              ),
+            );
             newRect = {
               ...dragStartRect,
               y: newY,
@@ -331,12 +400,24 @@ export function PdfCropModal({
             break;
           }
           case "s": {
-            const newHeight = Math.max(minSize, Math.min(1 - dragStartRect.y, dragStartRect.height + deltaYPercent));
+            const newHeight = Math.max(
+              minSize,
+              Math.min(
+                1 - dragStartRect.y,
+                dragStartRect.height + deltaYPercent,
+              ),
+            );
             newRect = { ...dragStartRect, height: newHeight };
             break;
           }
           case "w": {
-            const newX = Math.max(0, Math.min(dragStartRect.x + dragStartRect.width - minSize, dragStartRect.x + deltaXPercent));
+            const newX = Math.max(
+              0,
+              Math.min(
+                dragStartRect.x + dragStartRect.width - minSize,
+                dragStartRect.x + deltaXPercent,
+              ),
+            );
             newRect = {
               ...dragStartRect,
               x: newX,
@@ -345,7 +426,13 @@ export function PdfCropModal({
             break;
           }
           case "e": {
-            const newWidth = Math.max(minSize, Math.min(1 - dragStartRect.x, dragStartRect.width + deltaXPercent));
+            const newWidth = Math.max(
+              minSize,
+              Math.min(
+                1 - dragStartRect.x,
+                dragStartRect.width + deltaXPercent,
+              ),
+            );
             newRect = { ...dragStartRect, width: newWidth };
             break;
           }
@@ -421,7 +508,8 @@ export function PdfCropModal({
             <span className="truncate">Crop PDF — {file.name}</span>
             {croppedPagesCount > 0 && (
               <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
-                {croppedPagesCount} page{croppedPagesCount > 1 ? "s" : ""} cropped
+                {croppedPagesCount} page{croppedPagesCount > 1 ? "s" : ""}{" "}
+                cropped
               </span>
             )}
           </DialogTitle>
@@ -494,7 +582,10 @@ export function PdfCropModal({
                   left: imageRect.x,
                   top: cropPixels.top + cropPixels.height,
                   width: imageRect.w,
-                  height: imageRect.y + imageRect.h - (cropPixels.top + cropPixels.height),
+                  height:
+                    imageRect.y +
+                    imageRect.h -
+                    (cropPixels.top + cropPixels.height),
                 }}
               />
               {/* Left dark area */}
@@ -513,7 +604,10 @@ export function PdfCropModal({
                 style={{
                   left: cropPixels.left + cropPixels.width,
                   top: cropPixels.top,
-                  width: imageRect.x + imageRect.w - (cropPixels.left + cropPixels.width),
+                  width:
+                    imageRect.x +
+                    imageRect.w -
+                    (cropPixels.left + cropPixels.width),
                   height: cropPixels.height,
                 }}
               />
@@ -626,9 +720,11 @@ export function PdfCropModal({
           <div className="text-xs text-gray-500">
             {hasCrop ? (
               <span className="font-medium text-gray-700">
-                Crop: {Math.round((cropRect?.width || 0) * 100)}% × {Math.round((cropRect?.height || 0) * 100)}%
+                Crop: {Math.round((cropRect?.width || 0) * 100)}% ×{" "}
+                {Math.round((cropRect?.height || 0) * 100)}%
                 <span className="text-gray-400 ml-2">
-                  at ({Math.round((cropRect?.x || 0) * 100)}%, {Math.round((cropRect?.y || 0) * 100)}%)
+                  at ({Math.round((cropRect?.x || 0) * 100)}%,{" "}
+                  {Math.round((cropRect?.y || 0) * 100)}%)
                 </span>
               </span>
             ) : (

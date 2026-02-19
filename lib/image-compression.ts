@@ -330,7 +330,7 @@ export async function renderPdfPageToImageWithCrop(
     // First render the full page to a temp canvas
     const fullCanvasResult = createSafeCanvas(
       Math.floor(fullWidth * retryScale),
-      Math.floor(fullHeight * retryScale)
+      Math.floor(fullHeight * retryScale),
     );
     if (!fullCanvasResult) {
       qualityReduced = true;
@@ -376,8 +376,14 @@ export async function renderPdfPageToImageWithCrop(
 
       cropCtx.drawImage(
         fullCanvas,
-        srcX, srcY, srcW, srcH,
-        0, 0, attemptWidth, attemptHeight
+        srcX,
+        srcY,
+        srcW,
+        srcH,
+        0,
+        0,
+        attemptWidth,
+        attemptHeight,
       );
 
       // Convert to JPEG with specified quality

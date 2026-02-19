@@ -1,7 +1,7 @@
 export interface CropData {
-  x: number;      // Left offset as percentage (0–1)
-  y: number;      // Top offset as percentage (0–1)
-  width: number;  // Width as percentage (0–1)
+  x: number; // Left offset as percentage (0–1)
+  y: number; // Top offset as percentage (0–1)
+  width: number; // Width as percentage (0–1)
   height: number; // Height as percentage (0–1)
 }
 
@@ -23,7 +23,7 @@ export interface UploadedFile {
   thumbnail?: string;
   rotation?: number;
   cropData?: CropData;
-  pageCropData?: PageCropData;  // Per-page crop data for PDFs
+  pageCropData?: PageCropData; // Per-page crop data for PDFs
 }
 
 export interface OutputSettings {
