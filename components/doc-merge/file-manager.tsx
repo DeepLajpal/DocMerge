@@ -72,6 +72,8 @@ export function FileManager() {
   const clearPdfPageRotations = useMergeStore(
     (state) => state.clearPdfPageRotations,
   );
+  const reorderPdfPages = useMergeStore((state) => state.reorderPdfPages);
+  const clearPdfPageOrder = useMergeStore((state) => state.clearPdfPageOrder);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -760,6 +762,10 @@ export function FileManager() {
           onClearPdfPageRotations={() =>
             clearPdfPageRotations(activeModalFileId)
           }
+          onReorderPages={(pageOrder) =>
+            reorderPdfPages(activeModalFileId, pageOrder)
+          }
+          onClearPageOrder={() => clearPdfPageOrder(activeModalFileId)}
         />
       )}
     </div>

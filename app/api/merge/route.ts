@@ -34,6 +34,7 @@ interface FileInput {
     };
   };
   deletedPages?: number[];
+  pageOrder?: number[];
   pageRotations?: {
     [pageNumber: number]: number;
   };
@@ -182,12 +183,22 @@ export async function POST(request: NextRequest) {
             ignoreEncryption: !!file.password,
           });
 
-          // Get page indices, filtering out deleted pages
-          let pageIndices = sourcePdf.getPageIndices();
-          if (file.deletedPages && file.deletedPages.length > 0) {
-            pageIndices = pageIndices.filter(
-              (idx) => !file.deletedPages!.includes(idx + 1), // deletedPages is 1-indexed
-            );
+          // Get page indices, applying custom order and filtering out deleted pages
+          let pageIndices: number[];
+          
+          if (file.pageOrder && file.pageOrder.length > 0) {
+            // Use custom page order (1-indexed), convert to 0-indexed
+            pageIndices = file.pageOrder
+              .filter((p) => !file.deletedPages?.includes(p))
+              .map((p) => p - 1);
+          } else {
+            // Use natural order, filtering out deleted pages
+            pageIndices = sourcePdf.getPageIndices();
+            if (file.deletedPages && file.deletedPages.length > 0) {
+              pageIndices = pageIndices.filter(
+                (idx) => !file.deletedPages!.includes(idx + 1), // deletedPages is 1-indexed
+              );
+            }
           }
 
           const copiedPages = await mergedPdf.copyPages(sourcePdf, pageIndices);

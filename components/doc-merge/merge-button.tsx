@@ -49,6 +49,7 @@ async function mergeOnServer(
         pageCropData: file.pageCropData,
         deletedPages: file.deletedPages,
         pageRotations: file.pageRotations,
+        pageOrder: file.pageOrder,
       };
     }),
   );

@@ -389,14 +389,16 @@ export async function mergePDFsAndImages(
       const hasDeletedPages = file.deletedPages && file.deletedPages.length > 0;
       const hasPageRotations =
         file.pageRotations && Object.keys(file.pageRotations).length > 0;
+      const hasCustomPageOrder = file.pageOrder && file.pageOrder.length > 0;
 
-      // For compression, cropped pages, deleted pages, or rotated pages, we need to use pdf.js
+      // For compression, cropped pages, deleted pages, rotated pages, or custom page order, we need to use pdf.js
       // Then embed them as images in the new PDF
       if (
         compression.quality !== "high" ||
         hasPageCrops ||
         hasDeletedPages ||
-        hasPageRotations
+        hasPageRotations ||
+        hasCustomPageOrder
       ) {
         // Use canvas-based processing for compression and/or cropping
         try {
@@ -408,12 +410,14 @@ export async function mergePDFsAndImages(
           const dpiScale = getDpiScale(compression.quality);
           const jpegQuality = getJpegQuality(compression.quality);
 
-          for (let i = 1; i <= pdfDoc.numPages; i++) {
-            // Skip deleted pages
-            if (file.deletedPages?.includes(i)) {
-              continue;
-            }
+          // Determine page order: use custom order or natural order (1-indexed)
+          const pageNumbers = hasCustomPageOrder
+            ? file.pageOrder!.filter((p) => !file.deletedPages?.includes(p))
+            : Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).filter(
+                (p) => !file.deletedPages?.includes(p),
+              );
 
+          for (const i of pageNumbers) {
             const pdfPage = await pdfDoc.getPage(i);
             const pageRotation = file.pageRotations?.[i] ?? 0;
             const viewport = pdfPage.getViewport({

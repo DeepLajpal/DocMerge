@@ -34,6 +34,8 @@ interface MergeStore extends MergeState {
     rotation: number,
   ) => void;
   clearPdfPageRotations: (id: string) => void;
+  reorderPdfPages: (id: string, pageOrder: number[]) => void;
+  clearPdfPageOrder: (id: string) => void;
   updateOutputSettings: (settings: Partial<OutputSettings>) => void;
   updateCompressionSettings: (settings: Partial<CompressionSettings>) => void;
   setLoading: (loading: boolean) => void;
@@ -205,6 +207,18 @@ export const useMergeStore = create<MergeStore>((set) => ({
     set((state) => ({
       files: state.files.map((f) =>
         f.id === id ? { ...f, pageRotations: undefined } : f,
+      ),
+    })),
+
+  reorderPdfPages: (id: string, pageOrder: number[]) =>
+    set((state) => ({
+      files: state.files.map((f) => (f.id === id ? { ...f, pageOrder } : f)),
+    })),
+
+  clearPdfPageOrder: (id: string) =>
+    set((state) => ({
+      files: state.files.map((f) =>
+        f.id === id ? { ...f, pageOrder: undefined } : f,
       ),
     })),
 

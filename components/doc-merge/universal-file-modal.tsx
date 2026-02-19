@@ -15,6 +15,9 @@ import {
   RotateCcw,
   Move,
   Undo2,
+  LayoutGrid,
+  FileText,
+  GripVertical,
 } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import {
@@ -58,6 +61,8 @@ interface UniversalFileModalProps {
   onClearDeletedPages: () => void;
   onUpdatePdfPageRotation: (pageNumber: number, rotation: number) => void;
   onClearPdfPageRotations: () => void;
+  onReorderPages: (pageOrder: number[]) => void;
+  onClearPageOrder: () => void;
 }
 
 export function UniversalFileModal({
@@ -72,10 +77,21 @@ export function UniversalFileModal({
   onClearDeletedPages,
   onUpdatePdfPageRotation,
   onClearPdfPageRotations,
+  onReorderPages,
+  onClearPageOrder,
 }: UniversalFileModalProps) {
   // View state
   const [scale, setScale] = useState(1);
   const [fileSrc, setFileSrc] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"single" | "grid">("single");
+
+  // Thumbnails for grid view
+  const [thumbnails, setThumbnails] = useState<Record<number, string>>({});
+  const [draggedPage, setDraggedPage] = useState<number | null>(null);
+  const [dragOverPage, setDragOverPage] = useState<number | null>(null);
+  const [editingPage, setEditingPage] = useState<number | null>(null);
+  const [orderValue, setOrderValue] = useState<string>("");
+  const orderInputRef = useRef<HTMLInputElement>(null);
 
   // PDF-specific state
   const [currentPage, setCurrentPage] = useState(1);
@@ -197,6 +213,7 @@ export function UniversalFileModal({
   // Track when PDF document is ready
   const [pdfReady, setPdfReady] = useState(false);
 
+
   // Load PDF document
   useEffect(() => {
     if (!isPdf || !file.file) return;
@@ -252,6 +269,50 @@ export function UniversalFileModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file.id, isPdf]);
 
+  // Generate thumbnails when grid view is active
+  useEffect(() => {
+    if (!isPdf || !pdfReady || !pdfDocRef.current || viewMode !== "grid") return;
+
+    let cancelled = false;
+
+    const generate = async () => {
+      const pdf = pdfDocRef.current!;
+      const hasCustom = file.pageOrder && file.pageOrder.length > 0;
+      const pageNumbers = hasCustom
+        ? file.pageOrder!.filter((p) => !file.deletedPages?.includes(p))
+        : Array.from({ length: pdf.numPages }, (_, i) => i + 1).filter(
+            (p) => !file.deletedPages?.includes(p),
+          );
+
+      const result: Record<number, string> = {};
+      for (const p of pageNumbers) {
+        if (cancelled) break;
+        try {
+          const page = await pdf.getPage(p);
+          const rotation = file.pageRotations?.[p] ?? 0;
+          const viewport = page.getViewport({ scale: 0.25, rotation });
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          if (!ctx) continue;
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          result[p] = canvas.toDataURL("image/jpeg", 0.7);
+        } catch (err) {
+          console.error("Thumbnail render failed for page", p, err);
+        }
+      }
+
+      if (!cancelled) setThumbnails(result);
+    };
+
+    generate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPdf, pdfReady, file.pageOrder, file.deletedPages, file.pageRotations, viewMode]);
+
   // Re-render PDF page when page/scale/rotation changes OR when PDF becomes ready (view mode)
   useEffect(() => {
     if (
@@ -259,7 +320,8 @@ export function UniversalFileModal({
       pdfReady &&
       pdfDocRef.current &&
       currentPage > 0 &&
-      !isCropping
+      !isCropping &&
+      viewMode === "single"
     ) {
       renderPdfPage(currentPage);
     }
@@ -271,6 +333,7 @@ export function UniversalFileModal({
     isCropping,
     file.pageRotations,
     pdfReady,
+    viewMode,
   ]);
 
   // Render page to image when entering crop mode for PDF
@@ -420,6 +483,7 @@ export function UniversalFileModal({
       onClearPdfPageCrops();
       onClearDeletedPages();
       onClearPdfPageRotations();
+      onClearPageOrder();
     } else {
       onUpdateRotation(0);
       onUpdateCrop(undefined);
@@ -654,7 +718,8 @@ export function UniversalFileModal({
   const hasAnyEdits = isPdf
     ? !!(file.pageCropData && Object.keys(file.pageCropData).length > 0) ||
       !!(file.deletedPages && file.deletedPages.length > 0) ||
-      !!(file.pageRotations && Object.keys(file.pageRotations).length > 0)
+      !!(file.pageRotations && Object.keys(file.pageRotations).length > 0) ||
+      !!(file.pageOrder && file.pageOrder.length > 0)
     : !!(file.rotation && file.rotation !== 0) || !!file.cropData;
 
   // Count edit stats for PDF
@@ -697,6 +762,19 @@ export function UniversalFileModal({
               {/* Page navigation for PDFs */}
               {isPdf && totalPages > 1 && !isCropping && (
                 <>
+                  <Button
+                    variant={viewMode === "grid" ? "default" : "ghost"}
+                    size="icon"
+                    onClick={() => setViewMode(viewMode === "single" ? "grid" : "single")}
+                    title={viewMode === "single" ? "Grid View" : "Single Page View"}
+                    className={`h-8 w-8 mr-1 ${viewMode === "grid" ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
+                  >
+                    {viewMode === "single" ? (
+                      <LayoutGrid className="h-4 w-4" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -775,7 +853,7 @@ export function UniversalFileModal({
         {/* Main content area */}
         <div
           ref={containerRef}
-          className="relative flex-1 overflow-auto bg-gray-100 p-4 flex items-center justify-center min-h-0"
+          className={`relative flex-1 overflow-auto bg-gray-100 p-4 flex min-h-0 ${isPdf && viewMode === "grid" ? "items-start justify-start" : "items-center justify-center"}`}
         >
           {/* Deleted page overlay */}
           {isPdf && isCurrentPageDeleted() && !isCropping && (
@@ -938,8 +1016,173 @@ export function UniversalFileModal({
                 </div>
               )}
             </>
+          ) : isPdf && viewMode === "grid" ? (
+            // Grid view for page reordering
+            <div className="w-full h-full overflow-auto pt-2">
+              {/* Reset Order button */}
+              {file.pageOrder && file.pageOrder.length > 0 && (
+                <div className="flex justify-center mb-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onClearPageOrder()}
+                    className="text-amber-600 border-amber-300 hover:bg-amber-50"
+                  >
+                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                    Reset Order
+                  </Button>
+                </div>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 px-2">
+                {(() => {
+                  const hasCustomOrder = file.pageOrder && file.pageOrder.length > 0;
+                  const orderedPages = hasCustomOrder
+                    ? file.pageOrder!
+                    : Array.from({ length: totalPages }, (_, i) => i + 1);
+
+                  return orderedPages.map((pageNum, idx) => {
+                    const isDeleted = file.deletedPages?.includes(pageNum) ?? false;
+                    const isRotated = (file.pageRotations?.[pageNum] ?? 0) !== 0;
+                    const isDraggingThis = draggedPage === idx;
+                    const isDragOverThis = dragOverPage === idx;
+                    const isEditingThis = editingPage === idx;
+
+                    return (
+                      <div
+                        key={`page-${pageNum}-${idx}`}
+                        draggable={!isEditingThis}
+                        onDragStart={(e) => {
+                          setDraggedPage(idx);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setDragOverPage(idx);
+                        }}
+                        onDragLeave={() => setDragOverPage(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (draggedPage === null || draggedPage === idx) {
+                            setDraggedPage(null);
+                            setDragOverPage(null);
+                            return;
+                          }
+                          // Build the new order
+                          const currentOrder = hasCustomOrder
+                            ? [...file.pageOrder!]
+                            : Array.from({ length: totalPages }, (_, i) => i + 1);
+                          const [moved] = currentOrder.splice(draggedPage, 1);
+                          currentOrder.splice(idx, 0, moved);
+                          onReorderPages(currentOrder);
+                          setDraggedPage(null);
+                          setDragOverPage(null);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedPage(null);
+                          setDragOverPage(null);
+                        }}
+                        className={`relative rounded-lg border-2 p-2 pt-3 transition-all cursor-grab active:cursor-grabbing ${
+                          isDraggingThis
+                            ? "opacity-40 border-blue-400 bg-blue-50"
+                            : isDragOverThis
+                              ? "border-blue-500 bg-blue-50 scale-[1.03] shadow-md"
+                              : isDeleted
+                                ? "border-red-300 bg-red-50 opacity-50"
+                                : "border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm"
+                        }`}
+                      >
+                        {/* Position badge */}
+                        <div className="absolute -top-2.5 -left-2.5 z-10">
+                          {isEditingThis ? (
+                            <input
+                              ref={orderInputRef}
+                              type="number"
+                              min={1}
+                              max={orderedPages.length}
+                              value={orderValue}
+                              onChange={(e) => setOrderValue(e.target.value)}
+                              onBlur={() => {
+                                const newPos = parseInt(orderValue, 10);
+                                if (!isNaN(newPos) && newPos >= 1 && newPos <= orderedPages.length && newPos - 1 !== idx) {
+                                  const currentOrder = hasCustomOrder
+                                    ? [...file.pageOrder!]
+                                    : Array.from({ length: totalPages }, (_, i) => i + 1);
+                                  const [moved] = currentOrder.splice(idx, 1);
+                                  currentOrder.splice(newPos - 1, 0, moved);
+                                  onReorderPages(currentOrder);
+                                }
+                                setEditingPage(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  (e.target as HTMLInputElement).blur();
+                                } else if (e.key === "Escape") {
+                                  setEditingPage(null);
+                                }
+                              }}
+                              className="h-6 w-8 rounded-full border-2 border-blue-500 bg-white text-center text-xs font-bold text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setEditingPage(idx);
+                                setOrderValue(String(idx + 1));
+                              }}
+                              className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition-colors cursor-pointer ring-2 ring-white"
+                              title="Click to change position"
+                            >
+                              {idx + 1}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Rotation indicator */}
+                        {isRotated && (
+                          <div className="absolute -top-2.5 -right-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-purple-500 text-[8px] font-bold text-white shadow-md ring-2 ring-white">
+                            {file.pageRotations![pageNum]}°
+                          </div>
+                        )}
+
+                        {/* Deleted indicator */}
+                        {isDeleted && (
+                          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-red-100/60">
+                            <Trash2 className="h-6 w-6 text-red-400" />
+                          </div>
+                        )}
+
+                        {/* Thumbnail image */}
+                        <div className="aspect-[3/4] flex items-center justify-center overflow-hidden rounded bg-gray-50">
+                          {thumbnails[pageNum] ? (
+                            <img
+                              src={thumbnails[pageNum]}
+                              alt={`Page ${pageNum}`}
+                              className="w-full h-full object-contain"
+                              draggable={false}
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center w-full h-full">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Page number label */}
+                        <div className="mt-1.5 text-center text-[11px] text-gray-500 font-medium truncate">
+                          Page {pageNum}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
           ) : isPdf ? (
-            // PDF canvas-based viewer
+            // PDF canvas-based viewer (single page)
             pdfError ? (
               <div className="flex h-full flex-col items-center justify-center text-gray-500 gap-2">
                 <p>{pdfError}</p>
