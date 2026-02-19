@@ -61,18 +61,15 @@ export function DocMergeApp() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* File Manager - Upload, List/Grid View, Search, Camera */}
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+      {/* Left Column — Files */}
       <FileManager />
 
-      {/* Settings & Merge */}
+      {/* Right Column — Settings & Merge */}
       {files.length > 0 && (
         <div className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <OutputSettings />
-            <CompressionPanel />
-          </div>
-
+          <OutputSettings />
+          <CompressionPanel />
           <MergeButton />
         </div>
       )}

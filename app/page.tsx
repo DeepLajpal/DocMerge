@@ -13,7 +13,7 @@ export default function Home() {
       id="main-content"
       className="min-h-screen bg-linear-to-b from-gray-50 to-white py-12 px-4 sm:px-6 lg:px-8"
     >
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-6xl">
         {/* Header */}
         <div className="mb-12 text-center">
           <div className="flex justify-center mb-4">
