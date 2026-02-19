@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/card";
 import { CONFIG } from "@/lib/config";
 import { checkServerLimits, getServerLimitsSummary } from "@/lib/server-limits";
-import { Monitor, Server, Wifi, WifiOff } from "lucide-react";
+import { Monitor, Server, Wifi, WifiOff, ShieldCheck } from "lucide-react";
 
 export function CompressionPanel() {
   const compressionSettings = useMergeStore(
@@ -195,12 +195,23 @@ export function CompressionPanel() {
 
             {/* Server limits info */}
             {compressionSettings.processingMode === "server" && (
-              <div className="mt-2 rounded-lg bg-purple-50 p-2 text-xs text-purple-700">
-                <p>
-                  <strong>Server limits:</strong> Max {serverLimits.maxFiles}{" "}
-                  files, {serverLimits.maxFileSize}/file,{" "}
-                  {serverLimits.maxTotalSize} total
-                </p>
+              <div className="mt-3 space-y-2">
+                <div className="rounded-lg bg-purple-50 p-3 text-xs text-purple-700">
+                  <p className="font-semibold mb-1.5">Server Limits:</p>
+                  <ul className="space-y-1 ml-3 list-disc">
+                    <li>Max <strong>{serverLimits.maxFiles}</strong> files per merge</li>
+                    <li>Max <strong>{serverLimits.maxFileSize}</strong> per file</li>
+                    <li>Max <strong>{serverLimits.maxTotalSize}</strong> total combined size</li>
+                  </ul>
+                </div>
+                <div className="flex items-start gap-2 rounded-lg bg-green-50 border border-green-200 p-3 text-xs text-green-800">
+                  <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-green-600" />
+                  <p>
+                    Your files are processed securely on our server and are{" "}
+                    <strong>never stored or saved</strong>. They are deleted
+                    immediately after processing.
+                  </p>
+                </div>
               </div>
             )}
 
