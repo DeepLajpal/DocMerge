@@ -13,6 +13,7 @@ import {
   Grid3X3,
   List,
   Camera,
+  Clipboard,
   X,
   Filter,
   SortAsc,
@@ -59,7 +60,7 @@ export function FileManager() {
   const updateFileRotation = useMergeStore((state) => state.updateFileRotation);
 
   // View state
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("order");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
@@ -173,6 +174,54 @@ export function FileManager() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Paste handler - allows users to paste images from clipboard
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      // Don't intercept paste if user is typing in an input/textarea
+      const activeEl = document.activeElement;
+      if (
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        (activeEl as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            // Give the pasted image a descriptive name
+            const ext = file.type.split("/")[1] || "png";
+            const timestamp = new Date()
+              .toISOString()
+              .replace(/[:.]/g, "-")
+              .slice(0, 19);
+            const namedFile = new File(
+              [file],
+              `pasted-image-${timestamp}.${ext}`,
+              { type: file.type },
+            );
+            imageFiles.push(namedFile);
+          }
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        addFiles(imageFiles);
+      }
+    };
+
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [addFiles]);
 
   // Filter and sort files
   const filteredFiles = files
@@ -376,6 +425,9 @@ export function FileManager() {
             <div className="rounded-full bg-green-100 p-3">
               <Camera className="h-6 w-6 text-green-600" />
             </div>
+            <div className="rounded-full bg-purple-100 p-3">
+              <Clipboard className="h-6 w-6 text-purple-600" />
+            </div>
           </div>
 
           <div className="text-center">
@@ -383,7 +435,7 @@ export function FileManager() {
               Upload your documents
             </h3>
             <p className="mt-1 text-sm text-gray-500">
-              Drag & drop or use buttons below
+              Drag & drop, paste from clipboard, or use buttons below
             </p>
           </div>
 
@@ -405,7 +457,7 @@ export function FileManager() {
             </Button>
           </div>
 
-          <p className="text-xs text-gray-400">Supported: PDF, JPG, PNG</p>
+          <p className="text-xs text-gray-400">Supported: PDF, JPG, PNG · Paste images with Ctrl+V</p>
         </div>
       </div>
 
