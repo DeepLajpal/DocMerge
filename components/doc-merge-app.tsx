@@ -8,7 +8,7 @@ import { OutputSettings } from "./doc-merge/output-settings";
 import { CompressionPanel } from "./doc-merge/compression-panel";
 import { MergeButton } from "./doc-merge/merge-button";
 import { SuccessSummary } from "./doc-merge/success-summary";
-import { FileText } from "lucide-react";
+import { FileText, Github } from "lucide-react";
 
 export function DocMergeApp() {
   const files = useMergeStore((state) => state.files);
@@ -72,6 +72,15 @@ export function DocMergeApp() {
             <FileText className="h-5 w-5 text-blue-600" />
           </div>
           <h1 className="text-xl font-bold text-gray-900">DocMerge</h1>
+          <a
+            href="https://github.com/DeepLajpal/DocMerge"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:text-gray-900 hover:shadow"
+          >
+            <Github className="h-3.5 w-3.5" />
+            Open Source
+          </a>
         </div>
       ) : (
         <div className="mb-12 text-center">
@@ -89,6 +98,15 @@ export function DocMergeApp() {
           <p className="mt-2 text-sm text-gray-500">
             Fast, secure, and completely in-browser processing
           </p>
+          <a
+            href="https://github.com/DeepLajpal/DocMerge"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-1.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:text-gray-900 hover:shadow"
+          >
+            <Github className="h-4 w-4" />
+            Open Source · MIT License
+          </a>
         </div>
       )}
 
