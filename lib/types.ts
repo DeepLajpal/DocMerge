@@ -24,6 +24,7 @@ export interface CompressionSettings {
   targetSize: number;
   targetUnit: "KB" | "MB";
   quality: "high" | "balanced" | "small";
+  processingMode: "browser" | "server";
 }
 
 export interface MergeResult {

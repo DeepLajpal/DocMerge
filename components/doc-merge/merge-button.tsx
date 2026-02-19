@@ -8,11 +8,80 @@ import {
   Lock,
   FileX,
   AlertTriangle,
+  Server,
 } from "lucide-react";
 import { useMergeStore } from "@/lib/store";
 import { mergePDFsAndImages } from "@/lib/pdf-utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import type {
+  UploadedFile,
+  OutputSettings,
+  CompressionSettings,
+} from "@/lib/types";
+
+/**
+ * Merge files on the server using the API endpoint.
+ * This bypasses Canvas completely for guaranteed quality.
+ */
+async function mergeOnServer(
+  files: UploadedFile[],
+  outputSettings: OutputSettings,
+  compressionSettings: CompressionSettings,
+): Promise<{ pdfBytes: Uint8Array; pages: number }> {
+  // Convert files to base64 for API transport
+  const fileInputs = await Promise.all(
+    files.map(async (file) => {
+      const arrayBuffer = await file.file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          "",
+        ),
+      );
+      return {
+        name: file.name,
+        type: file.type,
+        data: base64,
+        rotation: file.rotation || 0,
+        password: file.password,
+      };
+    }),
+  );
+
+  const response = await fetch("/api/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      files: fileInputs,
+      settings: {
+        pageSize: outputSettings.pageSize,
+        orientation: outputSettings.orientation,
+        customWidth: outputSettings.customWidth,
+        customHeight: outputSettings.customHeight,
+      },
+      compression: {
+        quality: compressionSettings.quality,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Server error: ${response.status}`);
+  }
+
+  const result = await response.json();
+
+  // Decode base64 PDF
+  const binaryString = atob(result.pdfBase64);
+  const pdfBytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    pdfBytes[i] = binaryString.charCodeAt(i);
+  }
+
+  return { pdfBytes, pages: result.pages };
+}
 
 export function MergeButton() {
   const files = useMergeStore((state) => state.files);
@@ -74,43 +143,84 @@ export function MergeButton() {
     setLoading(true);
 
     try {
-      const mergeResult = await mergePDFsAndImages(
-        files,
-        outputSettings,
-        compressionSettings,
-      );
+      let pdfBytes: Uint8Array;
+      let pageCount: number;
+      let qualityReduced = false;
+      let reducedFiles: string[] = [];
+      let usedDirectEmbed = false;
+      let directEmbedFiles: string[] = [];
 
-      // Calculate page count (rough estimate)
-      const pageCount = files.reduce((sum, f) => sum + (f.pages || 1), 0);
+      if (compressionSettings.processingMode === "server") {
+        // Server-side processing - guaranteed quality, no Canvas limitations
+        console.info("[merge-button] Using server-side processing");
+        const result = await mergeOnServer(
+          files,
+          outputSettings,
+          compressionSettings,
+        );
+        pdfBytes = result.pdfBytes;
+        pageCount = result.pages;
+        // Server processing has no quality warnings
+      } else {
+        // Browser-side processing - may have Canvas limitations on mobile
+        console.info("[merge-button] Using browser-side processing");
+        const mergeResult = await mergePDFsAndImages(
+          files,
+          outputSettings,
+          compressionSettings,
+        );
+        pdfBytes = mergeResult.pdfBytes as Uint8Array;
+        pageCount = files.reduce((sum, f) => sum + (f.pages || 1), 0);
+        qualityReduced = mergeResult.qualityReduced || false;
+        reducedFiles = mergeResult.reducedFiles;
+        usedDirectEmbed = mergeResult.usedDirectEmbed || false;
+        directEmbedFiles = mergeResult.directEmbedFiles || [];
+      }
 
-      // Check if quality was reduced and notify user
-      if (mergeResult.qualityReduced) {
-        const fileCount = mergeResult.reducedFiles.length;
+      // Check if quality was reduced and notify user (browser mode only)
+      if (qualityReduced && reducedFiles.length > 0) {
+        const fileCount = reducedFiles.length;
         const fileList =
           fileCount <= 3
-            ? mergeResult.reducedFiles.join(", ")
-            : `${mergeResult.reducedFiles.slice(0, 3).join(", ")} and ${fileCount - 3} more`;
+            ? reducedFiles.join(", ")
+            : `${reducedFiles.slice(0, 3).join(", ")} and ${fileCount - 3} more`;
 
-        const warningMessage =
-          `Some images were automatically optimized for your device to ensure the PDF renders correctly. ` +
-          `This happens when images are too large for your device's graphics memory. ` +
-          `Affected files: ${fileList}. The PDF quality may be slightly reduced.`;
+        let warningMessage: string;
+
+        if (usedDirectEmbed) {
+          // Direct embed was used - explain that original images were used
+          warningMessage =
+            `Your device couldn't process some images, so we used the original files directly. ` +
+            `The PDF was created successfully but may be larger than expected. ` +
+            `Affected files: ${fileList}.`;
+
+          console.info(
+            `[merge-button] Direct embed used for ${directEmbedFiles.length} file(s):`,
+            directEmbedFiles,
+          );
+        } else {
+          // Quality reduced but no direct embed
+          warningMessage =
+            `Some images were automatically optimized for your device to ensure the PDF renders correctly. ` +
+            `This happens when images are too large for your device's graphics memory. ` +
+            `Affected files: ${fileList}. The PDF quality may be slightly reduced.`;
+        }
 
         setQualityWarning(warningMessage);
         console.info(
           `[merge-button] Quality reduced for ${fileCount} file(s):`,
-          mergeResult.reducedFiles,
+          reducedFiles,
         );
       }
 
       setMergeResult({
         pages: pageCount,
-        finalSize: mergeResult.pdfBytes.length,
-        qualityReduced: mergeResult.qualityReduced,
+        finalSize: pdfBytes.length,
+        qualityReduced: qualityReduced,
       });
 
       // Download the PDF
-      const blob = new Blob([mergeResult.pdfBytes as BlobPart], {
+      const blob = new Blob([pdfBytes as BlobPart], {
         type: "application/pdf",
       });
       const url = URL.createObjectURL(blob);

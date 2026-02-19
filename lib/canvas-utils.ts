@@ -132,6 +132,103 @@ export function validateCanvasOutput(
 }
 
 /**
+ * Validate canvas pixels to detect black/empty canvas output
+ * This is crucial for devices like Oppo F11 where toDataURL returns valid format but black pixels
+ * Samples pixels from multiple regions and checks if they're mostly non-black
+ */
+export function validateCanvasPixels(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): boolean {
+  try {
+    // Sample pixels from 9 different regions (3x3 grid + center)
+    const samplePoints = [
+      { x: Math.floor(width * 0.25), y: Math.floor(height * 0.25) },
+      { x: Math.floor(width * 0.5), y: Math.floor(height * 0.25) },
+      { x: Math.floor(width * 0.75), y: Math.floor(height * 0.25) },
+      { x: Math.floor(width * 0.25), y: Math.floor(height * 0.5) },
+      { x: Math.floor(width * 0.5), y: Math.floor(height * 0.5) },
+      { x: Math.floor(width * 0.75), y: Math.floor(height * 0.5) },
+      { x: Math.floor(width * 0.25), y: Math.floor(height * 0.75) },
+      { x: Math.floor(width * 0.5), y: Math.floor(height * 0.75) },
+      { x: Math.floor(width * 0.75), y: Math.floor(height * 0.75) },
+    ];
+
+    let nonBlackPixels = 0;
+    let totalSampled = 0;
+
+    for (const point of samplePoints) {
+      // Sample a small area around each point
+      const sampleSize = Math.min(
+        10,
+        Math.floor(width / 20),
+        Math.floor(height / 20),
+      );
+      if (sampleSize < 1) continue;
+
+      try {
+        const imageData = ctx.getImageData(
+          Math.max(0, point.x - sampleSize / 2),
+          Math.max(0, point.y - sampleSize / 2),
+          Math.min(sampleSize, width - point.x),
+          Math.min(sampleSize, height - point.y),
+        );
+
+        // Check pixels in this sample
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const r = imageData.data[i];
+          const g = imageData.data[i + 1];
+          const b = imageData.data[i + 2];
+          const a = imageData.data[i + 3];
+
+          totalSampled++;
+
+          // Consider a pixel "non-black" if:
+          // - It has any significant color (R, G, or B > 10)
+          // - OR it's white/light colored (our background fill)
+          // - AND it has opacity
+          if (a > 0 && (r > 10 || g > 10 || b > 10)) {
+            nonBlackPixels++;
+          }
+        }
+      } catch (sampleError) {
+        // getImageData can fail on tainted canvases or memory issues
+        console.warn("[canvas-utils] getImageData failed:", sampleError);
+        // If we can't sample, we can't validate - assume failure
+        return false;
+      }
+    }
+
+    // If we couldn't sample any pixels, assume failure
+    if (totalSampled === 0) {
+      console.warn("[canvas-utils] No pixels sampled, assuming canvas failure");
+      return false;
+    }
+
+    // Calculate the percentage of non-black pixels
+    const nonBlackRatio = nonBlackPixels / totalSampled;
+
+    // We expect at least 20% of sampled pixels to be non-black
+    // (accounting for potential dark areas in legitimate images)
+    // But since we fill with white first, most pixels should be white/colored
+    const isValid = nonBlackRatio > 0.2;
+
+    if (!isValid) {
+      console.warn(
+        `[canvas-utils] Canvas pixel validation failed: only ${(nonBlackRatio * 100).toFixed(1)}% non-black pixels ` +
+          `(sampled ${totalSampled} pixels)`,
+      );
+    }
+
+    return isValid;
+  } catch (error) {
+    console.warn("[canvas-utils] Pixel validation error:", error);
+    return false;
+  }
+}
+
+/**
  * Create a canvas with the specified dimensions
  * Validates that the canvas was created successfully
  */
@@ -160,6 +257,7 @@ export function createSafeCanvas(
 /**
  * Draw an image to canvas with white background and return validated data URL
  * Handles rotation if specified
+ * Now includes pixel-level validation to detect black canvas on mobile devices
  */
 export function drawImageToCanvas(
   canvas: HTMLCanvasElement,
@@ -200,6 +298,15 @@ export function drawImageToCanvas(
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+    }
+
+    // CRITICAL: Validate pixel content BEFORE calling toDataURL
+    // This catches the Oppo F11 issue where canvas draws but produces black pixels
+    if (!validateCanvasPixels(ctx, canvas.width, canvas.height)) {
+      console.warn(
+        "[canvas-utils] Canvas pixel validation failed - canvas produced black/empty output",
+      );
+      return null;
     }
 
     // Convert to data URL

@@ -35,6 +35,7 @@ const defaultCompressionSettings: CompressionSettings = {
   targetSize: 5,
   targetUnit: "MB",
   quality: "balanced",
+  processingMode: "browser",
 };
 
 export const useMergeStore = create<MergeStore>((set) => ({

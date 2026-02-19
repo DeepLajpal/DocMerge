@@ -10,6 +10,8 @@ vi.mock("../lib/pdf-utils", () => ({
     pdfBytes: new Uint8Array([1, 2, 3]),
     qualityReduced: false,
     reducedFiles: [],
+    usedDirectEmbed: false,
+    directEmbedFiles: [],
   }),
 }));
 

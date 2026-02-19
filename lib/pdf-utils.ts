@@ -13,6 +13,7 @@ import {
 import {
   getScaledDimensions,
   validateCanvasOutput,
+  validateCanvasPixels,
   createSafeCanvas,
   logImageProcessing,
 } from "./canvas-utils";
@@ -81,6 +82,8 @@ export async function extractImageAsPage(
   originalWidth: number;
   originalHeight: number;
   qualityReduced: boolean;
+  rotationSkipped?: boolean;
+  usedDirectEmbed?: boolean;
 }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -158,9 +161,19 @@ export async function extractImageAsPage(
               drawHeight,
             );
 
+            // CRITICAL: Validate pixel content to detect black canvas output
+            // This catches the Oppo F11 issue where canvas draws but produces black pixels
+            if (!validateCanvasPixels(ctx, attemptWidth, attemptHeight)) {
+              console.warn(
+                `[pdf-utils] Canvas pixel validation failed for ${file.name}, retry ${retry + 1}/${maxRetries}`,
+              );
+              qualityReduced = true;
+              continue;
+            }
+
             const rotatedImage = canvas.toDataURL("image/png");
 
-            // Validate the canvas output
+            // Validate the data URL format as well
             if (!validateCanvasOutput(rotatedImage)) {
               console.warn(
                 `[pdf-utils] Canvas output invalid for ${file.name}, retry ${retry + 1}/${maxRetries}`,
@@ -196,13 +209,34 @@ export async function extractImageAsPage(
             return;
           }
 
-          // All retries failed
-          reject(
-            new Error(
-              `Image ${file.name} rotation failed after ${maxRetries} retries. ` +
-                `Your device may have limited graphics memory.`,
-            ),
+          // All canvas retries failed - FALLBACK to original image without rotation
+          // This guarantees the PDF works even when canvas completely fails
+          console.warn(
+            `[pdf-utils] All canvas attempts failed for ${file.name}, using original image (rotation skipped)`,
           );
+
+          const image = e.target?.result as string;
+
+          logImageProcessing(
+            file.name,
+            img.width,
+            img.height,
+            img.width,
+            img.height,
+            true,
+            maxRetries,
+          );
+
+          // Return original with a flag indicating rotation was skipped
+          resolve({
+            width: img.width,
+            height: img.height,
+            image,
+            originalWidth: img.width,
+            originalHeight: img.height,
+            qualityReduced: true, // Mark as reduced since rotation was skipped
+            rotationSkipped: true,
+          });
         } else {
           // No rotation needed - use original image data
           const image = e.target?.result as string;
@@ -260,6 +294,8 @@ export interface MergeResult {
   pdfBytes: Uint8Array;
   qualityReduced: boolean;
   reducedFiles: string[];
+  usedDirectEmbed: boolean;
+  directEmbedFiles: string[];
 }
 
 export async function mergePDFsAndImages(
@@ -273,6 +309,8 @@ export async function mergePDFsAndImages(
   // Track quality reductions for user notification
   let qualityReduced = false;
   const reducedFiles: string[] = [];
+  let usedDirectEmbed = false;
+  const directEmbedFiles: string[] = [];
 
   for (const file of files) {
     if (file.type === "pdf") {
@@ -445,28 +483,62 @@ export async function mergePDFsAndImages(
           });
         }
       } catch (error) {
-        // Fallback for JPEG with balanced quality
-        const jpegQuality = getJpegQuality("balanced");
-        const resampleResult = await resampleImageWithResult(
-          imageData.image,
-          imageData.width,
-          imageData.height,
-          jpegQuality,
+        // FINAL FALLBACK: Direct embed of original image bytes
+        // This bypasses canvas completely and guarantees the PDF works
+        console.warn(
+          `[pdf-utils] Canvas processing failed for ${file.name}, using direct embed fallback:`,
+          error,
         );
 
-        // Track quality reduction from fallback
         qualityReduced = true;
+        usedDirectEmbed = true;
         if (!reducedFiles.includes(file.name)) {
           reducedFiles.push(file.name);
         }
+        if (!directEmbedFiles.includes(file.name)) {
+          directEmbedFiles.push(file.name);
+        }
 
-        const image = await mergedPdf.embedJpg(resampleResult.dataUrl);
-        page.drawImage(image, {
-          x,
-          y,
-          width: scaledWidth,
-          height: scaledHeight,
-        });
+        try {
+          // Try embedding original image directly from file bytes
+          const arrayBuffer = await file.file.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+
+          let image;
+          if (
+            file.file.type === "image/png" ||
+            file.name.toLowerCase().endsWith(".png")
+          ) {
+            image = await mergedPdf.embedPng(uint8Array);
+          } else {
+            image = await mergedPdf.embedJpg(uint8Array);
+          }
+
+          page.drawImage(image, {
+            x,
+            y,
+            width: scaledWidth,
+            height: scaledHeight,
+          });
+
+          console.info(
+            `[pdf-utils] Successfully embedded ${file.name} using direct file bytes`,
+          );
+        } catch (embedError) {
+          // Last resort: try with original data URL
+          console.warn(
+            `[pdf-utils] Direct embed failed for ${file.name}, trying data URL:`,
+            embedError,
+          );
+
+          const image = await mergedPdf.embedJpg(imageData.image);
+          page.drawImage(image, {
+            x,
+            y,
+            width: scaledWidth,
+            height: scaledHeight,
+          });
+        }
       }
     }
   }
@@ -486,6 +558,8 @@ export async function mergePDFsAndImages(
     pdfBytes,
     qualityReduced,
     reducedFiles,
+    usedDirectEmbed,
+    directEmbedFiles,
   };
 }
 
