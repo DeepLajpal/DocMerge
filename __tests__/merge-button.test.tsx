@@ -28,6 +28,7 @@ describe("MergeButton", () => {
         targetSize: 5,
         targetUnit: "MB",
         quality: "balanced",
+        processingMode: "browser",
       },
       isLoading: false,
       error: undefined,

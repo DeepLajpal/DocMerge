@@ -32,6 +32,8 @@ export interface MergeResult {
   finalSize: number;
   qualityReduced?: boolean;
   qualityWarningMessage?: string;
+  downloadUrl?: string;
+  downloadFilename?: string;
 }
 
 export interface MergeState {

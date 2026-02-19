@@ -23,6 +23,7 @@ interface MergeStore extends MergeState {
   setError: (error: string | undefined) => void;
   setQualityWarning: (warning: string | undefined) => void;
   resetApp: () => void;
+  goBackToConversion: () => void;
 }
 
 const defaultOutputSettings: OutputSettings = {
@@ -123,13 +124,33 @@ export const useMergeStore = create<MergeStore>((set) => ({
     })),
 
   resetApp: () =>
-    set(() => ({
-      files: [],
-      outputSettings: defaultOutputSettings,
-      compressionSettings: defaultCompressionSettings,
-      mergeResult: undefined,
-      isLoading: false,
-      error: undefined,
-      qualityWarning: undefined,
-    })),
+    set((state) => {
+      // Revoke the download URL to free memory
+      if (state.mergeResult?.downloadUrl) {
+        URL.revokeObjectURL(state.mergeResult.downloadUrl);
+      }
+      return {
+        files: [],
+        outputSettings: defaultOutputSettings,
+        compressionSettings: defaultCompressionSettings,
+        mergeResult: undefined,
+        isLoading: false,
+        error: undefined,
+        qualityWarning: undefined,
+      };
+    }),
+
+  goBackToConversion: () =>
+    set((state) => {
+      // Revoke the download URL to free memory
+      if (state.mergeResult?.downloadUrl) {
+        URL.revokeObjectURL(state.mergeResult.downloadUrl);
+      }
+      return {
+        mergeResult: undefined,
+        isLoading: false,
+        error: undefined,
+        qualityWarning: undefined,
+      };
+    }),
 }));

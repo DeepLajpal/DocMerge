@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, RotateCcw, TrendingDown } from 'lucide-react';
+import { CheckCircle2, RotateCcw, Download, TrendingDown } from 'lucide-react';
 import { useMergeStore } from '@/lib/store';
 import { formatFileSize } from '@/lib/file-utils';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ export function SuccessSummary() {
   const mergeResult = useMergeStore((state) => state.mergeResult);
   const files = useMergeStore((state) => state.files);
   const compressionSettings = useMergeStore((state) => state.compressionSettings);
-  const resetApp = useMergeStore((state) => state.resetApp);
+  const goBackToConversion = useMergeStore((state) => state.goBackToConversion);
 
   if (!mergeResult) return null;
 
@@ -18,6 +18,16 @@ export function SuccessSummary() {
   const originalSize = files.reduce((sum, f) => sum + f.size, 0);
   const compressionRatio = originalSize > 0 ? (1 - mergeResult.finalSize / originalSize) * 100 : 0;
   const savedSize = originalSize - mergeResult.finalSize;
+
+  const handleDownload = () => {
+    if (!mergeResult.downloadUrl || !mergeResult.downloadFilename) return;
+    const link = document.createElement('a');
+    link.href = mergeResult.downloadUrl;
+    link.download = mergeResult.downloadFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <Card className="border-green-200 bg-green-50">
@@ -58,14 +68,30 @@ export function SuccessSummary() {
               </p>
             </div>
 
-            <Button
-              onClick={resetApp}
-              variant="outline"
-              className="mt-4 gap-2 border-green-300 text-green-700 hover:bg-green-100"
-            >
-              <RotateCcw className="h-4 w-4" />
-              Merge More Files
-            </Button>
+            <p className="mt-3 text-xs text-green-600">
+              Your download should start automatically. If it doesn&apos;t, click the button below.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              {mergeResult.downloadUrl && (
+                <Button
+                  onClick={handleDownload}
+                  className="gap-2 bg-green-600 text-white hover:bg-green-700"
+                >
+                  <Download className="h-4 w-4" />
+                  Download PDF
+                </Button>
+              )}
+
+              <Button
+                onClick={goBackToConversion}
+                variant="outline"
+                className="gap-2 border-green-300 text-green-700 hover:bg-green-100"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Merge More Files
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>

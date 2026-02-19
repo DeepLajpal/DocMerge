@@ -213,24 +213,29 @@ export function MergeButton() {
         );
       }
 
-      setMergeResult({
-        pages: pageCount,
-        finalSize: pdfBytes.length,
-        qualityReduced: qualityReduced,
-      });
-
-      // Download the PDF
+      // Create blob URL for download
       const blob = new Blob([pdfBytes as BlobPart], {
         type: "application/pdf",
       });
       const url = URL.createObjectURL(blob);
+      const filename = `${outputSettings.filename}.pdf`;
+
+      setMergeResult({
+        pages: pageCount,
+        finalSize: pdfBytes.length,
+        qualityReduced: qualityReduced,
+        downloadUrl: url,
+        downloadFilename: filename,
+      });
+
+      // Auto-download the PDF
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${outputSettings.filename}.pdf`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Note: URL is NOT revoked here so user can re-download from success page
     } catch (err: any) {
       setError(err.message || "Failed to merge files. Please try again.");
       console.error("Merge error:", err);
