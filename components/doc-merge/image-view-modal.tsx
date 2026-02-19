@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ZoomIn, ZoomOut, RotateCw, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import {
   Dialog,
@@ -26,7 +32,7 @@ export function ImageViewModal({ file, onClose }: ImageViewModalProps) {
   const [rotation, setRotation] = useState(0);
   const [scale, setScale] = useState(1);
   const [fileSrc, setFileSrc] = useState<string | null>(null);
-  
+
   // PDF-specific state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -38,51 +44,54 @@ export function ImageViewModal({ file, onClose }: ImageViewModalProps) {
   const isPdf = file.type === "pdf";
 
   // Render a specific PDF page to canvas
-  const renderPdfPage = useCallback(async (pageNum: number) => {
-    if (!pdfDocRef.current || !canvasRef.current) return;
-    
-    try {
-      setPdfLoading(true);
-      const page = await pdfDocRef.current.getPage(pageNum);
-      
-      // Calculate viewport with scale and rotation
-      const baseScale = 1.5; // Higher quality than thumbnails
-      const viewport = page.getViewport({ 
-        scale: baseScale * scale,
-        rotation: rotation 
-      });
+  const renderPdfPage = useCallback(
+    async (pageNum: number) => {
+      if (!pdfDocRef.current || !canvasRef.current) return;
 
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+      try {
+        setPdfLoading(true);
+        const page = await pdfDocRef.current.getPage(pageNum);
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+        // Calculate viewport with scale and rotation
+        const baseScale = 1.5; // Higher quality than thumbnails
+        const viewport = page.getViewport({
+          scale: baseScale * scale,
+          rotation: rotation,
+        });
 
-      await page.render({
-        canvasContext: ctx,
-        viewport: viewport,
-      }).promise;
-      
-      setPdfLoading(false);
-    } catch (error) {
-      console.error("Failed to render PDF page:", error);
-      setPdfError("Failed to render page");
-      setPdfLoading(false);
-    }
-  }, [scale, rotation]);
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        await page.render({
+          canvasContext: ctx,
+          viewport: viewport,
+        }).promise;
+
+        setPdfLoading(false);
+      } catch (error) {
+        console.error("Failed to render PDF page:", error);
+        setPdfError("Failed to render page");
+        setPdfLoading(false);
+      }
+    },
+    [scale, rotation],
+  );
 
   // Load PDF document
   useEffect(() => {
     if (!isPdf || !file.file) return;
-    
+
     let cancelled = false;
-    
+
     const loadPdf = async () => {
       try {
         setPdfLoading(true);
         setPdfError(null);
-        
+
         const arrayBuffer = await file.file.arrayBuffer();
         const loadingTask = pdfjsLib.getDocument({
           data: arrayBuffer,
@@ -90,16 +99,16 @@ export function ImageViewModal({ file, onClose }: ImageViewModalProps) {
         });
 
         const pdf = await loadingTask.promise;
-        
+
         if (cancelled) {
           pdf.destroy();
           return;
         }
-        
+
         pdfDocRef.current = pdf;
         setTotalPages(pdf.numPages);
         setCurrentPage(1);
-        
+
         // Render first page
         await renderPdfPage(1);
       } catch (error: any) {
@@ -136,10 +145,10 @@ export function ImageViewModal({ file, onClose }: ImageViewModalProps) {
   // Load image source (for non-PDF files)
   useEffect(() => {
     if (isPdf || !file.file) return;
-    
+
     const url = URL.createObjectURL(file.file);
     setFileSrc(url);
-    
+
     // Initialize with existing rotation if any
     if (file.rotation) {
       setRotation(file.rotation);
@@ -175,7 +184,9 @@ export function ImageViewModal({ file, onClose }: ImageViewModalProps) {
       <DialogContent className="max-w-4xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-5 pt-5 pb-3">
           <DialogTitle className="flex items-center justify-between text-base">
-            <span className="truncate max-w-[calc(100%-200px)]">{file.name}</span>
+            <span className="truncate max-w-[calc(100%-200px)]">
+              {file.name}
+            </span>
             <div className="flex items-center gap-1">
               {/* Page navigation for PDFs */}
               {isPdf && totalPages > 1 && (
@@ -267,10 +278,10 @@ export function ImageViewModal({ file, onClose }: ImageViewModalProps) {
             )
           ) : fileSrc ? (
             // Image viewer
-            <div 
-              style={{ 
+            <div
+              style={{
                 transform: `scale(${scale}) rotate(${rotation}deg)`,
-                transition: "transform 0.2s ease-in-out"
+                transition: "transform 0.2s ease-in-out",
               }}
               className="origin-center"
             >
@@ -294,4 +305,3 @@ export function ImageViewModal({ file, onClose }: ImageViewModalProps) {
     </Dialog>
   );
 }
-
