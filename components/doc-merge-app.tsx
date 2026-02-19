@@ -8,6 +8,7 @@ import { OutputSettings } from "./doc-merge/output-settings";
 import { CompressionPanel } from "./doc-merge/compression-panel";
 import { MergeButton } from "./doc-merge/merge-button";
 import { SuccessSummary } from "./doc-merge/success-summary";
+import { FileText } from "lucide-react";
 
 export function DocMergeApp() {
   const files = useMergeStore((state) => state.files);
@@ -60,19 +61,50 @@ export function DocMergeApp() {
     return <SuccessSummary />;
   }
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
-      {/* Left Column — Files */}
-      <FileManager />
+  const hasFiles = files.length > 0;
 
-      {/* Right Column — Settings & Merge */}
-      {files.length > 0 && (
-        <div className="space-y-4">
-          <OutputSettings />
-          <CompressionPanel />
-          <MergeButton />
+  return (
+    <>
+      {/* Header — centered hero or compact navbar */}
+      {hasFiles ? (
+        <div className="mb-6 flex items-center gap-3">
+          <div className="rounded-full bg-blue-100 p-2">
+            <FileText className="h-5 w-5 text-blue-600" />
+          </div>
+          <h1 className="text-xl font-bold text-gray-900">DocMerge</h1>
+        </div>
+      ) : (
+        <div className="mb-12 text-center">
+          <div className="flex justify-center mb-4">
+            <div className="rounded-full bg-blue-100 p-3">
+              <FileText className="h-8 w-8 text-blue-600" />
+            </div>
+          </div>
+          <h1 className="text-4xl font-bold text-gray-900 sm:text-5xl mb-3">
+            DocMerge
+          </h1>
+          <p className="text-xl text-gray-600">
+            Merge PDFs and images into a single document
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            Fast, secure, and completely in-browser processing
+          </p>
         </div>
       )}
-    </div>
+
+      {/* App content */}
+      {hasFiles ? (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+          <FileManager />
+          <div className="space-y-4">
+            <OutputSettings />
+            <CompressionPanel />
+            <MergeButton />
+          </div>
+        </div>
+      ) : (
+        <FileManager />
+      )}
+    </>
   );
 }
